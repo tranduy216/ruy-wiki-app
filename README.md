@@ -54,6 +54,15 @@ npm start
 
 The server will start on `http://localhost:3000` (or the port specified in your .env file).
 
+### Test the API
+
+#### Option 1: Use the Web Interface
+Open your browser and navigate to `http://localhost:3000/` to access the test page with a user-friendly interface for uploading multiple files.
+
+![Upload Test Page](https://github.com/user-attachments/assets/e396f57b-06ed-4a3f-a8ef-b8a05dc6c5b9)
+
+#### Option 2: Use Command Line or API Clients
+
 ### API Endpoints
 
 #### Health Check

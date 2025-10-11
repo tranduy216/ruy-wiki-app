@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .upload-section {
+            margin-bottom: 20px;
+        }
+        input[type="file"] {
+            display: block;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .response {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .response.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .response.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .file-info {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .file-item {
+            padding: 8px;
+            margin: 5px 0;
+            background-color: white;
+            border-left: 3px solid #007bff;
+            padding-left: 10px;
+        }
+        .loading {
+            display: none;
+            margin-top: 10px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Multi-File Upload Test</h1>
+        <div class="upload-section">
+            <label for="fileInput">Select files to upload (max 10 files, 10MB each):</label>
+            <input type="file" id="fileInput" multiple accept="*/*">
+            <button onclick="uploadFiles()" id="uploadBtn">Upload Files</button>
+            <div class="loading" id="loading">Uploading files...</div>
+        </div>
+        <div id="response" class="response"></div>
+    </div>
+
+    <script>
+        async function uploadFiles() {
+            const fileInput = document.getElementById('fileInput');
+            const responseDiv = document.getElementById('response');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const loading = document.getElementById('loading');
+            
+            if (!fileInput.files.length) {
+                showResponse('Please select at least one file', 'error');
+                return;
+            }
+
+            if (fileInput.files.length > 10) {
+                showResponse('Maximum 10 files allowed', 'error');
+                return;
+            }
+
+            // Check file sizes
+            for (let i = 0; i < fileInput.files.length; i++) {
+                const file = fileInput.files[i];
+                if (file.size > 10 * 1024 * 1024) {
+                    showResponse(`File "${file.name}" exceeds 10MB limit`, 'error');
+                    return;
+                }
+            }
+
+            const formData = new FormData();
+            for (let i = 0; i < fileInput.files.length; i++) {
+                formData.append('files', fileInput.files[i]);
+            }
+
+            uploadBtn.disabled = true;
+            loading.style.display = 'block';
+            responseDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('http://localhost:3000/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    let html = `<h3>✓ ${data.message}</h3>`;
+                    if (data.files && data.files.length > 0) {
+                        html += '<div class="file-info"><strong>Uploaded Files:</strong>';
+                        data.files.forEach(file => {
+                            html += `
+                                <div class="file-item">
+                                    <strong>${file.originalName}</strong><br>
+                                    Size: ${formatBytes(file.size)}<br>
+                                    Type: ${file.mimetype}<br>
+                                    S3 Key: ${file.key}
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                    }
+                    showResponse(html, 'success');
+                    fileInput.value = ''; // Clear the input
+                } else {
+                    showResponse(`Error: ${data.error || data.message}`, 'error');
+                }
+            } catch (error) {
+                showResponse(`Error: ${error.message}`, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+
+        function showResponse(message, type) {
+            const responseDiv = document.getElementById('response');
+            responseDiv.innerHTML = message;
+            responseDiv.className = 'response ' + type;
+            responseDiv.style.display = 'block';
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // Allow Enter key to trigger upload
+        document.getElementById('fileInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                uploadFiles();
+            }
+        });
+    </script>
+</body>
+</html>

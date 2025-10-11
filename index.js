@@ -1,10 +1,15 @@
 const express = require('express');
 const multer = require('multer');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Enable CORS for all routes
+app.use(cors());
 
 // Configure multer for memory storage
 const upload = multer({
@@ -26,6 +31,11 @@ const s3Client = new S3Client({
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'File upload API is running' });
+});
+
+// Serve test page
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'test-upload.html'));
 });
 
 // Multiple file upload endpoint
@@ -95,6 +105,7 @@ app.use((err, req, res, next) => {
 
 app.listen(port, () => {
   console.log(`File upload API listening at http://localhost:${port}`);
+  console.log(`Test page available at: http://localhost:${port}/`);
   console.log(`Health check available at: http://localhost:${port}/health`);
   console.log(`Upload endpoint available at: POST http://localhost:${port}/upload`);
 });
