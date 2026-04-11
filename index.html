@@ -1017,8 +1017,9 @@ function openWriteModal(menu, postToEdit) {
 async function submitPost() {
   const modal      = document.getElementById('write-modal');
   const menu       = modal.dataset.menu;
-  const editNumber = modal.dataset.editNumber ? parseInt(modal.dataset.editNumber, 10) : null;
-  const isEdit     = !!editNumber;
+  const editNumStr = modal.dataset.editNumber;
+  const editNumber = editNumStr ? parseInt(editNumStr, 10) : null;
+  const isEdit     = Number.isInteger(editNumber) && editNumber > 0;
   const title      = document.getElementById('post-title').value.trim();
   const content    = document.getElementById('post-content').value.trim();
   const titleErr   = document.getElementById('title-error');
@@ -1038,9 +1039,16 @@ async function submitPost() {
   try {
     if (isEdit) {
       const updated = await apiEditIssue(editNumber, title, content);
-      // Update cache
+      // Update cache: replace if found, otherwise prepend
       if (postsCache[menu]) {
-        postsCache[menu] = postsCache[menu].map(p => p.number === editNumber ? updated : p);
+        const idx = postsCache[menu].findIndex(p => p.number === editNumber);
+        if (idx !== -1) {
+          postsCache[menu] = postsCache[menu].map(p => p.number === editNumber ? updated : p);
+        } else {
+          postsCache[menu] = [updated, ...postsCache[menu]];
+        }
+      } else {
+        postsCache[menu] = [updated];
       }
       closeModal('write-modal');
       showToast('Đã lưu thay đổi! ✅', 'success');
