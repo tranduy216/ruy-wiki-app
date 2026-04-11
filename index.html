@@ -707,6 +707,23 @@ async function apiCloseIssue(number) {
   }
 }
 
+async function apiEditIssue(number, title, content) {
+  const pat = getPAT();
+  if (!pat) throw new Error('NO_PAT');
+  const res = await ghFetch(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${number}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, body: content })
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) throw new Error('PAT không hợp lệ hoặc hết hạn. Vui lòng cập nhật lại.');
+    if (res.status === 403) throw new Error('PAT không có quyền. Cần quyền public_repo.');
+    throw new Error(data.message || `Lỗi ${res.status}`);
+  }
+  return res.json();
+}
+
 // ================================================================
 //  NAVIGATION
 // ================================================================
@@ -783,7 +800,7 @@ function renderList(posts) {
           <div class="post-card-excerpt">${esc(excerpt)}${excerpt.length >= 130 ? '…' : ''}</div>
           <div class="post-card-footer">
             <span class="post-tag ${tagCls}">${tagText}</span>
-            ${hasPAT ? `<button class="btn btn-sm btn-danger post-card-delete" onclick="deletePost(event,${p.number})">🗑 Xóa</button>` : ''}
+            ${hasPAT ? `<button class="btn btn-sm btn-outline post-card-edit" onclick="editPost(event,${p.number})">✏️ Sửa</button><button class="btn btn-sm btn-danger post-card-delete" onclick="deletePost(event,${p.number})">🗑 Xóa</button>` : ''}
           </div>
         </div>`;
     }).join('');
@@ -840,6 +857,7 @@ function renderDetail(post) {
   document.getElementById('main-content').innerHTML = `
     <div class="detail-back">
       <button class="btn btn-outline" onclick="navigate('${currentMenu}')">← Quay lại</button>
+      ${hasPAT ? `<button class="btn btn-outline btn-sm" onclick="editPostDetail(${post.number})">✏️ Sửa bài</button>` : ''}
       ${hasPAT ? `<button class="btn btn-danger btn-sm" onclick="deletePostDetail(${post.number})">🗑 Xóa bài</button>` : ''}
       <div class="spacer"></div>
       <a href="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${post.number}"
@@ -888,6 +906,24 @@ async function deletePostDetail(number) {
     if (err.message.includes('PAT')) { showToast(err.message, 'error'); openPATModal(false); return; }
     showToast(err.message, 'error');
   }
+}
+
+// ================================================================
+//  EDIT
+// ================================================================
+function editPost(event, number) {
+  event.stopPropagation();
+  const post = (postsCache[currentMenu] || []).find(p => p.number === number);
+  if (!post) return;
+  if (!getPAT()) { pendingMenu = currentMenu; openPATModal(true); return; }
+  openWriteModal(currentMenu, post);
+}
+
+function editPostDetail(number) {
+  const post = (postsCache[currentMenu] || []).find(p => p.number === number);
+  if (!post) return;
+  if (!getPAT()) { pendingMenu = currentMenu; openPATModal(true); return; }
+  openWriteModal(currentMenu, post);
 }
 
 // ================================================================
@@ -961,22 +997,30 @@ function handleClearPAT() {
 // ================================================================
 //  MODAL: WRITE POST
 // ================================================================
-function openWriteModal(menu) {
-  document.getElementById('write-modal-title').textContent =
-    menu === 'co-hoi' ? '✏️ Viết bài — Cơ hội' : '✏️ Viết bài — Chia sẻ';
-  document.getElementById('post-title').value   = '';
-  document.getElementById('post-content').value = menu === 'co-hoi' ? CO_HOI_TEMPLATE : '';
+function openWriteModal(menu, postToEdit) {
+  const isEdit = !!postToEdit;
+  document.getElementById('write-modal-title').textContent = isEdit
+    ? '✏️ Chỉnh sửa bài viết'
+    : (menu === 'co-hoi' ? '✏️ Viết bài — Cơ hội' : '✏️ Viết bài — Chia sẻ');
+  document.getElementById('post-title').value   = isEdit ? postToEdit.title : '';
+  document.getElementById('post-content').value = isEdit ? (postToEdit.body || '') : (menu === 'co-hoi' ? CO_HOI_TEMPLATE : '');
   document.getElementById('title-error').classList.remove('visible');
   document.getElementById('content-error').classList.remove('visible');
   document.getElementById('write-modal').dataset.menu = menu;
+  document.getElementById('write-modal').dataset.editNumber = isEdit ? postToEdit.number : '';
+  const submitBtn = document.getElementById('submit-btn');
+  submitBtn.innerHTML = isEdit ? '<span>💾 Lưu thay đổi</span>' : '<span>🚀 Đăng bài lên GitHub</span>';
   openModal('write-modal');
   setTimeout(() => document.getElementById('post-title').focus(), 80);
 }
 
 async function submitPost() {
-  const menu    = document.getElementById('write-modal').dataset.menu;
-  const title   = document.getElementById('post-title').value.trim();
-  const content = document.getElementById('post-content').value.trim();
+  const modal      = document.getElementById('write-modal');
+  const menu       = modal.dataset.menu;
+  const editNumber = modal.dataset.editNumber ? parseInt(modal.dataset.editNumber, 10) : null;
+  const isEdit     = !!editNumber;
+  const title      = document.getElementById('post-title').value.trim();
+  const content    = document.getElementById('post-content').value.trim();
   const titleErr   = document.getElementById('title-error');
   const contentErr = document.getElementById('content-error');
   const btn        = document.getElementById('submit-btn');
@@ -987,18 +1031,32 @@ async function submitPost() {
   if (!ok) return;
 
   btn.disabled = true;
-  btn.innerHTML = `<span class="spinner spinner-sm"></span>&nbsp; Đang đăng lên GitHub…`;
+  btn.innerHTML = isEdit
+    ? `<span class="spinner spinner-sm"></span>&nbsp; Đang lưu thay đổi…`
+    : `<span class="spinner spinner-sm"></span>&nbsp; Đang đăng lên GitHub…`;
 
   try {
-    const issue = await apiCreateIssue(menu, title, content);
-    // Prepend to cache
-    postsCache[menu] = [issue, ...(postsCache[menu] || [])];
-    closeModal('write-modal');
-    showToast('Đăng bài thành công! 🎉 Mọi người đã có thể thấy.', 'success');
-    currentMenu   = menu;
-    updateNavActive();
-    renderDetail(issue);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (isEdit) {
+      const updated = await apiEditIssue(editNumber, title, content);
+      // Update cache
+      if (postsCache[menu]) {
+        postsCache[menu] = postsCache[menu].map(p => p.number === editNumber ? updated : p);
+      }
+      closeModal('write-modal');
+      showToast('Đã lưu thay đổi! ✅', 'success');
+      renderDetail(updated);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      const issue = await apiCreateIssue(menu, title, content);
+      // Prepend to cache
+      postsCache[menu] = [issue, ...(postsCache[menu] || [])];
+      closeModal('write-modal');
+      showToast('Đăng bài thành công! 🎉 Mọi người đã có thể thấy.', 'success');
+      currentMenu   = menu;
+      updateNavActive();
+      renderDetail(issue);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   } catch (err) {
     if (err.message === 'NO_PAT') {
       closeModal('write-modal');
@@ -1012,7 +1070,7 @@ async function submitPost() {
     }
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<span>🚀 Đăng bài lên GitHub</span>';
+    btn.innerHTML = isEdit ? '<span>💾 Lưu thay đổi</span>' : '<span>🚀 Đăng bài lên GitHub</span>';
   }
 }
 
