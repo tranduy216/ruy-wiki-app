@@ -408,6 +408,20 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       font-family: 'Consolas', 'Courier New', monospace;
       font-size: .87rem; line-height: 1.65;
     }
+    .form-textarea.drag-over {
+      border-color: var(--gold);
+      background: #fdfaf0;
+      box-shadow: 0 0 0 3px rgba(201,162,39,.2);
+    }
+    .img-uploading-badge {
+      display: inline-flex; align-items: center; gap: .35rem;
+      background: #fff8e1; border: 1px solid var(--gold);
+      color: #7a5c00; border-radius: 5px;
+      padding: .18rem .55rem; font-size: .78rem; font-weight: 600;
+      animation: pulse .9s ease-in-out infinite alternate;
+      margin-top: .4rem;
+    }
+    @keyframes pulse { from { opacity: 1; } to { opacity: .55; } }
     .form-error { color: var(--red); font-size: .81rem; margin-top: .32rem; display: none; }
     .form-error.visible { display: block; }
     .form-hint { color: var(--muted); font-size: .78rem; margin-top: .3rem; line-height: 1.5; }
@@ -569,7 +583,13 @@ if(__exports != exports)module.exports = exports;return module.exports}));
         <textarea id="post-content" class="form-textarea"
           placeholder="Viết nội dung bằng Markdown..." style="min-height:400px;"></textarea>
         <span class="form-error" id="content-error">Vui lòng nhập nội dung!</span>
-        <span class="form-hint">Hỗ trợ Markdown đầy đủ: **đậm**, *nghiêng*, ## Tiêu đề, - Danh sách, > Trích dẫn, v.v.</span>
+        <span class="form-hint">
+          Hỗ trợ Markdown đầy đủ: **đậm**, *nghiêng*, ## Tiêu đề, - Danh sách, > Trích dẫn, v.v.<br/>
+          📎 <strong>Dán ảnh</strong> (Ctrl+V) hoặc <strong>kéo thả ảnh</strong> vào ô soạn thảo để upload tự động.
+        </span>
+        <div id="img-upload-status" style="display:none;">
+          <span class="img-uploading-badge"><span class="spinner spinner-sm"></span> Đang upload ảnh…</span>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -585,9 +605,10 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 // ================================================================
 //  CONFIG
 // ================================================================
-const GITHUB_OWNER = 'tranduy216';
-const GITHUB_REPO  = 'ruy-wiki-app';
-const GITHUB_API   = 'https://api.github.com';
+const GITHUB_OWNER  = 'tranduy216';
+const GITHUB_REPO   = 'ruy-wiki-app';
+const GITHUB_BRANCH = 'main';          // Branch for image uploads and raw file URLs
+const GITHUB_API    = 'https://api.github.com';
 // SHA-256 hash of the write password (never store plain text passwords in source)
 const CORRECT_PW_HASH = '9ae4dba46f1711a2bf1638fcf89433e9bd51314f607fe3dd5646655da93d378b';
 const PAT_KEY         = 'ruy_wiki_pat';
@@ -1114,9 +1135,137 @@ function fmtDateFull(iso) {
 }
 
 // ================================================================
+//  IMAGE UPLOAD (paste & drag-drop into editor)
+// ================================================================
+function setupEditorUpload() {
+  const ta = document.getElementById('post-content');
+
+  // ---- Paste ----
+  ta.addEventListener('paste', async (e) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const imgItem = items.find(i => i.type.startsWith('image/'));
+    if (!imgItem) return;
+    e.preventDefault();
+    await uploadImageToRepo(imgItem.getAsFile(), ta);
+  });
+
+  // ---- Drag-over visual ----
+  ta.addEventListener('dragover', (e) => {
+    const hasImg = Array.from(e.dataTransfer?.items || []).some(i => i.kind === 'file' && i.type.startsWith('image/'));
+    if (hasImg) { e.preventDefault(); ta.classList.add('drag-over'); }
+  });
+  ta.addEventListener('dragleave', () => ta.classList.remove('drag-over'));
+  ta.addEventListener('dragend',   () => ta.classList.remove('drag-over'));
+
+  // ---- Drop ----
+  ta.addEventListener('drop', async (e) => {
+    ta.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer?.files || []).filter(f => f.type.startsWith('image/'));
+    if (!files.length) return;
+    e.preventDefault();
+    for (const file of files) await uploadImageToRepo(file, ta);
+  });
+}
+
+async function uploadImageToRepo(file, textarea) {
+  if (!file) return;
+  const pat = getPAT();
+  if (!pat) {
+    showToast('Cần cài đặt GitHub PAT để upload ảnh!', 'error');
+    openPATModal(false);
+    return;
+  }
+
+  // Random filename
+  const rawExt = file.type.split('/')[1] || 'png';
+  const ext    = rawExt === 'jpeg' ? 'jpg' : rawExt.replace(/[^a-z0-9]/g, '');
+  const name   = `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+  const repoPath    = `static/images/${name}`;
+  const UPLOADING   = 'uploading...';           // shared marker used for placeholder & replacement
+  const placeholder = `![${name}](${UPLOADING})`;
+
+  // Insert placeholder at cursor so user sees progress inline
+  insertAtCursor(textarea, placeholder);
+  setImgUploadStatus(true);
+
+  try {
+    const base64 = await fileToBase64(file);
+
+    const res = await fetch(
+      `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${repoPath}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/vnd.github+json',
+          'Authorization': `Bearer ${pat}`,
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28'
+        },
+        body: JSON.stringify({
+          message: `chore: upload image ${name}`,
+          content: base64,
+          branch: GITHUB_BRANCH
+        })
+      }
+    );
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      textarea.value = textarea.value.replace(placeholder, '');
+      if (res.status === 401) throw new Error('PAT không hợp lệ hoặc hết hạn.');
+      if (res.status === 403) throw new Error('PAT thiếu quyền public_repo.');
+      if (res.status === 404) throw new Error('Repo không tìm thấy hoặc PAT không có quyền truy cập.');
+      throw new Error(data.message || `Upload lỗi ${res.status}`);
+    }
+
+    const imageUrl =
+      `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${repoPath}`;
+    textarea.value = textarea.value.replace(placeholder, `![${name}](${imageUrl})`);
+    showToast('Upload ảnh thành công! ✅', 'success');
+  } catch (err) {
+    textarea.value = textarea.value.replace(placeholder, '');
+    showToast(`Upload ảnh thất bại: ${err.message}`, 'error');
+    if (err.message.includes('PAT')) openPATModal(false);
+  } finally {
+    setImgUploadStatus(false);
+  }
+}
+
+function setImgUploadStatus(uploading) {
+  const el = document.getElementById('img-upload-status');
+  if (el) el.style.display = uploading ? 'block' : 'none';
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function insertAtCursor(textarea, text) {
+  const start  = textarea.selectionStart;
+  const end    = textarea.selectionEnd;
+  const before = textarea.value.substring(0, start);
+  const after  = textarea.value.substring(end);
+  // Ensure the image tag stands on its own line:
+  // prefix newline if the cursor is not already at the start of a line,
+  // suffix newline so subsequent typing starts on a fresh line.
+  const prefix = (before.length > 0 && !before.endsWith('\n')) ? '\n' : '';
+  const suffix = after.startsWith('\n') ? '' : '\n';
+  const insertion = prefix + text + suffix;
+  textarea.value = before + insertion + after;
+  textarea.selectionStart = textarea.selectionEnd = start + insertion.length;
+  textarea.focus();
+}
+
+// ================================================================
 //  BOOT
 // ================================================================
 updatePATDot();
+setupEditorUpload();
 navigate('co-hoi');
 </script>
 </body>
