@@ -507,30 +507,6 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 <!-- ===== TOAST ===== -->
 <div class="toast-container" id="toast-container"></div>
 
-<!-- ===== MODAL: PASSWORD ===== -->
-<div class="modal-overlay" id="password-modal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>🔐 Xác thực để viết bài</h2>
-      <button class="modal-close" onclick="closeModal('password-modal')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p style="margin-bottom:1rem;color:var(--muted);font-size:.9rem;">Nhập mật khẩu để tiếp tục đăng bài viết mới.</p>
-      <div class="form-group">
-        <label class="form-label">Mật khẩu</label>
-        <input type="password" id="pw-input" class="form-input"
-          placeholder="Nhập mật khẩu..."
-          onkeydown="if(event.key==='Enter') submitPassword()" autocomplete="current-password" />
-        <span class="form-error" id="pw-error">Mật khẩu không đúng. Vui lòng thử lại!</span>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('password-modal')">Hủy</button>
-      <button class="btn btn-primary" onclick="submitPassword()">Xác nhận →</button>
-    </div>
-  </div>
-</div>
-
 <!-- ===== MODAL: PAT SETUP ===== -->
 <div class="modal-overlay" id="pat-modal">
   <div class="modal" style="max-width:580px;">
@@ -621,15 +597,7 @@ const GITHUB_OWNER  = 'tranduy216';
 const GITHUB_REPO   = 'ruy-wiki-app';
 const GITHUB_BRANCH = 'main';          // Branch for image uploads and raw file URLs
 const GITHUB_API    = 'https://api.github.com';
-// SHA-256 hash of the write password (never store plain text passwords in source)
-const CORRECT_PW_HASH = '9ae4dba46f1711a2bf1638fcf89433e9bd51314f607fe3dd5646655da93d378b';
 const PAT_KEY         = 'ruy_wiki_pat';
-const AUTH_KEY        = 'ruy_wiki_auth';   // sessionStorage → clears on tab close
-
-async function hashPassword(pw) {
-  const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 const CO_HOI_TEMPLATE = `## Mã chứng khoán
 
@@ -661,8 +629,6 @@ let postsCache    = {};         // { 'co-hoi': [...], 'chia-se': [...] }
 // ================================================================
 //  AUTH HELPERS
 // ================================================================
-function isAuthed()    { return sessionStorage.getItem(AUTH_KEY) === '1'; }
-function setAuthed()   { sessionStorage.setItem(AUTH_KEY, '1'); }
 function getPAT()      { return localStorage.getItem(PAT_KEY) || ''; }
 function setPAT(tok)   { localStorage.setItem(PAT_KEY, tok.trim()); }
 function clearPAT()    { localStorage.removeItem(PAT_KEY); }
@@ -925,40 +891,14 @@ async function deletePostDetail(number) {
 }
 
 // ================================================================
-//  WRITE FLOW:  "Viết bài" → password → PAT? → form
+//  WRITE FLOW:  "Viết bài" → PAT? → form
 // ================================================================
 function handleWriteClick() {
   pendingMenu = currentMenu;
-  if (!isAuthed()) {
-    openModal('password-modal');
-    setTimeout(() => document.getElementById('pw-input').focus(), 80);
-  } else if (!getPAT()) {
+  if (!getPAT()) {
     openPATModal(true);
   } else {
     openWriteModal(pendingMenu);
-  }
-}
-
-// ================================================================
-//  MODAL: PASSWORD
-// ================================================================
-async function submitPassword() {
-  const input = document.getElementById('pw-input');
-  const err   = document.getElementById('pw-error');
-  const hash  = await hashPassword(input.value);
-  if (hash === CORRECT_PW_HASH) {
-    setAuthed();
-    err.classList.remove('visible');
-    closeModal('password-modal');
-    if (!getPAT()) {
-      openPATModal(true);
-    } else {
-      openWriteModal(pendingMenu);
-    }
-  } else {
-    err.classList.add('visible');
-    input.value = '';
-    input.focus();
   }
 }
 
@@ -1082,7 +1022,7 @@ async function submitPost() {
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-['password-modal', 'pat-modal', 'write-modal'].forEach(id => {
+['pat-modal', 'write-modal'].forEach(id => {
   document.getElementById(id).addEventListener('click', function(e) {
     if (e.target === this) closeModal(id);
   });
