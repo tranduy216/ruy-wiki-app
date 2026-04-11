@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -87,10 +87,58 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 //# sourceMappingURL=marked.umd.js.map
 
   </script>
+  <script>
+    /* Anti-flash: apply saved theme before CSS renders to prevent flicker */
+    (function() {
+      var theme = localStorage.getItem('ruy_wiki_theme') || 'light';
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
   <style>
     /* ===== RESET & VARIABLES ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
+      /* Light theme – GitHub style (default) */
+      --bg:        #f6f8fa;
+      --surface:   #ffffff;
+      --surface2:  #f6f8fa;
+      --surface3:  #eaeef2;
+      --blue:      #0969da;
+      --blue2:     #0969da;
+      --blue3:     #54aeff;
+      --border:    #d0d7de;
+      --text:      #1f2328;
+      --muted:     #656d76;
+      --green:     #1a7f37;
+      --red:       #d1242f;
+      --shadow:    0 1px 3px rgba(27,31,36,.12);
+
+      --navy:   #24292f;
+      --navy2:  #2d333b;
+      --navy3:  var(--blue);
+      --gold:   var(--blue);
+      --gold2:  var(--blue2);
+      --gold3:  var(--blue3);
+      --white:  var(--surface);
+      --light:  var(--bg);
+      --gray:   #8c959f;
+      --info:   var(--blue);
+
+      /* Theme-specific tokens */
+      --pre-bg:              #f6f8fa;
+      --pre-color:           #1f2328;
+      --tag-green-bg:        rgba(26,127,55,.1);
+      --tag-green-color:     #1a7f37;
+      --toast-ok-bg:         rgba(26,127,55,.1);
+      --toast-ok-border:     #1a7f37;
+      --toast-ok-color:      #166534;
+      --toast-err-bg:        rgba(209,36,47,.1);
+      --toast-err-border:    #d1242f;
+      --toast-err-color:     #b91c1c;
+      --modal-close-hover:   rgba(0,0,0,.06);
+      --card-hover-shadow:   0 4px 16px rgba(27,31,36,.15);
+    }
+    html[data-theme="dark"] {
       /* Dark theme – blue foreground */
       --bg:        #060b14;
       --surface:   #0d1526;
@@ -106,17 +154,22 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       --red:       #ef4444;
       --shadow:    0 2px 20px rgba(0,0,0,.55);
 
-      /* Legacy aliases so existing CSS keeps working */
       --navy:   #0a1628;
       --navy2:  #0f1e38;
-      --navy3:  var(--blue);
-      --gold:   var(--blue);
-      --gold2:  var(--blue2);
-      --gold3:  var(--blue3);
-      --white:  var(--surface);
-      --light:  var(--bg);
       --gray:   #4a6a8a;
-      --info:   var(--blue);
+
+      --pre-bg:              #050a14;
+      --pre-color:           #93c5fd;
+      --tag-green-bg:        rgba(34,197,94,.12);
+      --tag-green-color:     #4ade80;
+      --toast-ok-bg:         rgba(34,197,94,.15);
+      --toast-ok-border:     #22c55e;
+      --toast-ok-color:      #4ade80;
+      --toast-err-bg:        rgba(239,68,68,.15);
+      --toast-err-border:    #ef4444;
+      --toast-err-color:     #f87171;
+      --modal-close-hover:   rgba(255,255,255,.08);
+      --card-hover-shadow:   0 6px 28px rgba(0,0,0,.45);
     }
     body {
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -257,7 +310,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     }
     .post-card:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 28px rgba(0,0,0,.45);
+      box-shadow: var(--card-hover-shadow);
       border-color: var(--blue);
     }
     .post-card-header {
@@ -276,7 +329,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       padding: .18rem .55rem; border-radius: 50px;
       font-size: .71rem; font-weight: 600; letter-spacing: .02em;
     }
-    .tag-co-hoi  { background: rgba(34,197,94,.12); color: #4ade80; }
+    .tag-co-hoi  { background: var(--tag-green-bg); color: var(--tag-green-color); }
     .tag-chia-se { background: rgba(59,130,246,.12); color: var(--blue2); }
     .post-card-delete { opacity: 0; transition: opacity .18s; margin-left: auto; }
     .post-card:hover .post-card-delete { opacity: 1; }
@@ -330,7 +383,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       padding: .14em .38em; font-size: .88em; font-family: 'Consolas', monospace;
     }
     .md-content pre {
-      background: #050a14; color: var(--blue3);
+      background: var(--pre-bg); color: var(--pre-color);
       border-radius: 8px; padding: 1rem 1.2rem; overflow-x: auto; margin: 1em 0;
       border: 1px solid var(--border);
     }
@@ -397,7 +450,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       line-height: 1; padding: .1rem .3rem; border-radius: 4px;
       transition: background .15s, color .15s;
     }
-    .modal-close:hover { background: rgba(255,255,255,.08); color: var(--text); }
+    .modal-close:hover { background: var(--modal-close-hover); color: var(--text); }
     .modal-body { padding: 1.45rem; }
     .modal-footer {
       padding: 1rem 1.45rem;
@@ -464,8 +517,8 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       box-shadow: var(--shadow); display: flex; align-items: center; gap: .5rem;
       animation: toastIn .25s ease; max-width: 320px;
     }
-    .toast.success { background: rgba(34,197,94,.15); border-color: var(--green); color: #4ade80; }
-    .toast.error   { background: rgba(239,68,68,.15); border-color: var(--red); color: #f87171; }
+    .toast.success { background: var(--toast-ok-bg);  border-color: var(--toast-ok-border);  color: var(--toast-ok-color); }
+    .toast.error   { background: var(--toast-err-bg); border-color: var(--toast-err-border); color: var(--toast-err-color); }
     @keyframes toastIn { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
 
     /* ===== RESPONSIVE ===== */
@@ -477,6 +530,19 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       .modal-overlay { align-items: flex-end; padding: 0; }
       .modal-header { border-radius: 14px 14px 0 0; }
     }
+
+    /* ===== THEME TOGGLE ===== */
+    .nav-theme-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px;
+      padding: 0;
+      border-radius: 6px;
+      background: none; border: none; cursor: pointer;
+      font-size: 1.08rem; line-height: 1;
+      color: rgba(255,255,255,.75);
+      transition: background .15s, color .15s;
+    }
+    .nav-theme-btn:hover { background: rgba(255,255,255,.12); color: #fff; }
   </style>
 </head>
 <body>
@@ -496,6 +562,10 @@ if(__exports != exports)module.exports = exports;return module.exports}));
           <span class="pat-dot" id="pat-dot"></span>
           <span>⚙️ Kết nối</span>
         </a>
+      </li>
+      <li><div class="nav-sep"></div></li>
+      <li>
+        <button id="theme-toggle" class="nav-theme-btn" onclick="toggleTheme()" title="Đổi giao diện"></button>
       </li>
     </ul>
   </div>
@@ -597,7 +667,8 @@ const GITHUB_OWNER  = 'tranduy216';
 const GITHUB_REPO   = 'ruy-wiki-app';
 const GITHUB_BRANCH = 'main';          // Branch for image uploads and raw file URLs
 const GITHUB_API    = 'https://api.github.com';
-const PAT_KEY         = 'ruy_wiki_pat';
+const PAT_KEY       = 'ruy_wiki_pat';
+const THEME_KEY     = 'ruy_wiki_theme';
 
 const CO_HOI_TEMPLATE = `## Mã chứng khoán
 
@@ -625,6 +696,21 @@ let currentView   = 'list';     // 'list' | 'detail'
 let currentPostNo = null;       // GitHub issue number
 let pendingMenu   = null;       // menu awaiting auth flow
 let postsCache    = {};         // { 'co-hoi': [...], 'chia-se': [...] }
+
+// ================================================================
+//  THEME
+// ================================================================
+function getTheme()       { return localStorage.getItem(THEME_KEY) || 'light'; }
+function setThemeClass(theme) {
+  document.documentElement.dataset.theme = theme;
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+function toggleTheme() {
+  const next = getTheme() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  setThemeClass(next);
+}
 
 // ================================================================
 //  AUTH HELPERS
@@ -707,6 +793,23 @@ async function apiCloseIssue(number) {
   }
 }
 
+async function apiEditIssue(number, title, content) {
+  const pat = getPAT();
+  if (!pat) throw new Error('NO_PAT');
+  const res = await ghFetch(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${number}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, body: content })
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) throw new Error('PAT không hợp lệ hoặc hết hạn. Vui lòng cập nhật lại.');
+    if (res.status === 403) throw new Error('PAT không có quyền. Cần quyền public_repo.');
+    throw new Error(data.message || `Lỗi ${res.status}`);
+  }
+  return res.json();
+}
+
 // ================================================================
 //  NAVIGATION
 // ================================================================
@@ -783,7 +886,7 @@ function renderList(posts) {
           <div class="post-card-excerpt">${esc(excerpt)}${excerpt.length >= 130 ? '…' : ''}</div>
           <div class="post-card-footer">
             <span class="post-tag ${tagCls}">${tagText}</span>
-            ${hasPAT ? `<button class="btn btn-sm btn-danger post-card-delete" onclick="deletePost(event,${p.number})">🗑 Xóa</button>` : ''}
+            ${hasPAT ? `<button class="btn btn-sm btn-outline post-card-edit" onclick="editPost(event,${p.number})">✏️ Sửa</button><button class="btn btn-sm btn-danger post-card-delete" onclick="deletePost(event,${p.number})">🗑 Xóa</button>` : ''}
           </div>
         </div>`;
     }).join('');
@@ -840,6 +943,7 @@ function renderDetail(post) {
   document.getElementById('main-content').innerHTML = `
     <div class="detail-back">
       <button class="btn btn-outline" onclick="navigate('${currentMenu}')">← Quay lại</button>
+      ${hasPAT ? `<button class="btn btn-outline btn-sm" onclick="editPostDetail(${post.number})">✏️ Sửa bài</button>` : ''}
       ${hasPAT ? `<button class="btn btn-danger btn-sm" onclick="deletePostDetail(${post.number})">🗑 Xóa bài</button>` : ''}
       <div class="spacer"></div>
       <a href="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${post.number}"
@@ -888,6 +992,24 @@ async function deletePostDetail(number) {
     if (err.message.includes('PAT')) { showToast(err.message, 'error'); openPATModal(false); return; }
     showToast(err.message, 'error');
   }
+}
+
+// ================================================================
+//  EDIT
+// ================================================================
+function editPost(event, number) {
+  event.stopPropagation();
+  const post = (postsCache[currentMenu] || []).find(p => p.number === number);
+  if (!post) return;
+  if (!getPAT()) { pendingMenu = currentMenu; openPATModal(true); return; }
+  openWriteModal(currentMenu, post);
+}
+
+function editPostDetail(number) {
+  const post = (postsCache[currentMenu] || []).find(p => p.number === number);
+  if (!post) return;
+  if (!getPAT()) { pendingMenu = currentMenu; openPATModal(true); return; }
+  openWriteModal(currentMenu, post);
 }
 
 // ================================================================
@@ -961,22 +1083,31 @@ function handleClearPAT() {
 // ================================================================
 //  MODAL: WRITE POST
 // ================================================================
-function openWriteModal(menu) {
-  document.getElementById('write-modal-title').textContent =
-    menu === 'co-hoi' ? '✏️ Viết bài — Cơ hội' : '✏️ Viết bài — Chia sẻ';
-  document.getElementById('post-title').value   = '';
-  document.getElementById('post-content').value = menu === 'co-hoi' ? CO_HOI_TEMPLATE : '';
+function openWriteModal(menu, postToEdit) {
+  const isEdit = !!postToEdit;
+  document.getElementById('write-modal-title').textContent = isEdit
+    ? '✏️ Chỉnh sửa bài viết'
+    : (menu === 'co-hoi' ? '✏️ Viết bài — Cơ hội' : '✏️ Viết bài — Chia sẻ');
+  document.getElementById('post-title').value   = isEdit ? postToEdit.title : '';
+  document.getElementById('post-content').value = isEdit ? (postToEdit.body || '') : (menu === 'co-hoi' ? CO_HOI_TEMPLATE : '');
   document.getElementById('title-error').classList.remove('visible');
   document.getElementById('content-error').classList.remove('visible');
   document.getElementById('write-modal').dataset.menu = menu;
+  document.getElementById('write-modal').dataset.editNumber = isEdit ? postToEdit.number : '';
+  const submitBtn = document.getElementById('submit-btn');
+  submitBtn.innerHTML = isEdit ? '<span>💾 Lưu thay đổi</span>' : '<span>🚀 Đăng bài lên GitHub</span>';
   openModal('write-modal');
   setTimeout(() => document.getElementById('post-title').focus(), 80);
 }
 
 async function submitPost() {
-  const menu    = document.getElementById('write-modal').dataset.menu;
-  const title   = document.getElementById('post-title').value.trim();
-  const content = document.getElementById('post-content').value.trim();
+  const modal      = document.getElementById('write-modal');
+  const menu       = modal.dataset.menu;
+  const editNumStr = modal.dataset.editNumber;
+  const editNumber = editNumStr ? parseInt(editNumStr, 10) : null;
+  const isEdit     = Number.isInteger(editNumber) && editNumber > 0;
+  const title      = document.getElementById('post-title').value.trim();
+  const content    = document.getElementById('post-content').value.trim();
   const titleErr   = document.getElementById('title-error');
   const contentErr = document.getElementById('content-error');
   const btn        = document.getElementById('submit-btn');
@@ -987,18 +1118,39 @@ async function submitPost() {
   if (!ok) return;
 
   btn.disabled = true;
-  btn.innerHTML = `<span class="spinner spinner-sm"></span>&nbsp; Đang đăng lên GitHub…`;
+  btn.innerHTML = isEdit
+    ? `<span class="spinner spinner-sm"></span>&nbsp; Đang lưu thay đổi…`
+    : `<span class="spinner spinner-sm"></span>&nbsp; Đang đăng lên GitHub…`;
 
   try {
-    const issue = await apiCreateIssue(menu, title, content);
-    // Prepend to cache
-    postsCache[menu] = [issue, ...(postsCache[menu] || [])];
-    closeModal('write-modal');
-    showToast('Đăng bài thành công! 🎉 Mọi người đã có thể thấy.', 'success');
-    currentMenu   = menu;
-    updateNavActive();
-    renderDetail(issue);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (isEdit) {
+      const updated = await apiEditIssue(editNumber, title, content);
+      // Update cache: replace if found, otherwise prepend
+      if (postsCache[menu]) {
+        const idx = postsCache[menu].findIndex(p => p.number === editNumber);
+        if (idx !== -1) {
+          postsCache[menu][idx] = updated;
+        } else {
+          postsCache[menu] = [updated, ...postsCache[menu]];
+        }
+      } else {
+        postsCache[menu] = [updated];
+      }
+      closeModal('write-modal');
+      showToast('Đã lưu thay đổi! ✅', 'success');
+      renderDetail(updated);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      const issue = await apiCreateIssue(menu, title, content);
+      // Prepend to cache
+      postsCache[menu] = [issue, ...(postsCache[menu] || [])];
+      closeModal('write-modal');
+      showToast('Đăng bài thành công! 🎉 Mọi người đã có thể thấy.', 'success');
+      currentMenu   = menu;
+      updateNavActive();
+      renderDetail(issue);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   } catch (err) {
     if (err.message === 'NO_PAT') {
       closeModal('write-modal');
@@ -1012,7 +1164,7 @@ async function submitPost() {
     }
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<span>🚀 Đăng bài lên GitHub</span>';
+    btn.innerHTML = isEdit ? '<span>💾 Lưu thay đổi</span>' : '<span>🚀 Đăng bài lên GitHub</span>';
   }
 }
 
@@ -1216,6 +1368,7 @@ function insertAtCursor(textarea, text) {
 // ================================================================
 //  BOOT
 // ================================================================
+setThemeClass(getTheme());
 updatePATDot();
 setupEditorUpload();
 navigate('co-hoi');
