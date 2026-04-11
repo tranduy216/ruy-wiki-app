@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ruy Wiki — Đầu tư Chứng khoán</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    /* ===== RESET & BASE ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:   #0d2137;
+      --navy2:  #163352;
+      --navy3:  #1e4976;
+      --gold:   #c9a227;
+      --gold2:  #e5bb3c;
+      --gold3:  #f7d774;
+      --white:  #ffffff;
+      --light:  #f4f6f9;
+      --gray:   #a0aab4;
+      --border: #d0dae5;
+      --text:   #1a2535;
+      --muted:  #6b7a8d;
+      --green:  #198754;
+      --red:    #dc3545;
+      --shadow: 0 2px 16px rgba(13,33,55,.12);
+    }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--light);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ===== NAVBAR ===== */
+    .navbar {
+      background: var(--navy);
+      border-bottom: 3px solid var(--gold);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .navbar-inner {
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1rem;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+    .navbar-brand {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      padding: .8rem 0;
+      text-decoration: none;
+    }
+    .navbar-brand .logo-icon {
+      width: 36px; height: 36px;
+      background: var(--gold);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem;
+      font-weight: 900;
+      color: var(--navy);
+      flex-shrink: 0;
+    }
+    .navbar-brand span {
+      font-size: 1.18rem;
+      font-weight: 700;
+      color: var(--white);
+      letter-spacing: .02em;
+    }
+    .navbar-brand small {
+      display: block;
+      font-size: .68rem;
+      color: var(--gold3);
+      font-weight: 400;
+      letter-spacing: .04em;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: .25rem;
+      list-style: none;
+      padding: .5rem 0;
+    }
+    .nav-links a {
+      display: flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .45rem .9rem;
+      border-radius: 6px;
+      text-decoration: none;
+      color: rgba(255,255,255,.78);
+      font-weight: 500;
+      font-size: .92rem;
+      transition: background .18s, color .18s;
+      cursor: pointer;
+    }
+    .nav-links a:hover { background: rgba(255,255,255,.1); color: #fff; }
+    .nav-links a.active {
+      background: var(--gold);
+      color: var(--navy);
+    }
+    .nav-links .nav-icon { font-size: 1em; }
+
+    /* ===== MAIN LAYOUT ===== */
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 1.5rem 1rem 3rem;
+    }
+
+    /* ===== PAGE HEADER ===== */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .page-header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--navy);
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .page-header h1 .page-icon {
+      width: 36px; height: 36px;
+      background: var(--navy);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+      color: var(--gold);
+    }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .52rem 1.1rem;
+      border: none;
+      border-radius: 7px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform .12s, box-shadow .12s, opacity .12s;
+      text-decoration: none;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary {
+      background: var(--gold);
+      color: var(--navy);
+    }
+    .btn-primary:hover { background: var(--gold2); }
+    .btn-outline {
+      background: transparent;
+      border: 2px solid var(--navy3);
+      color: var(--navy3);
+    }
+    .btn-outline:hover { background: var(--navy3); color: #fff; }
+    .btn-navy {
+      background: var(--navy);
+      color: #fff;
+    }
+    .btn-navy:hover { background: var(--navy2); }
+    .btn-danger {
+      background: var(--red);
+      color: #fff;
+    }
+    .btn-danger:hover { opacity: .88; }
+    .btn-sm { padding: .32rem .7rem; font-size: .8rem; }
+
+    /* ===== POST CARDS ===== */
+    .posts-grid {
+      display: grid;
+      gap: 1rem;
+    }
+    .post-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.2rem 1.4rem;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s, border-color .15s;
+      position: relative;
+    }
+    .post-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(13,33,55,.15);
+      border-color: var(--gold);
+    }
+    .post-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .55rem;
+    }
+    .post-card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--navy);
+      line-height: 1.4;
+      flex: 1;
+    }
+    .post-card-date {
+      font-size: .75rem;
+      color: var(--muted);
+      white-space: nowrap;
+      padding-top: .18rem;
+    }
+    .post-card-excerpt {
+      font-size: .87rem;
+      color: var(--muted);
+      line-height: 1.6;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .post-card-footer {
+      margin-top: .8rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .post-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: .2rem .6rem;
+      border-radius: 50px;
+      font-size: .72rem;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    .post-tag-co-hoi { background: #e8f4ec; color: var(--green); }
+    .post-tag-chia-se { background: #e8eef8; color: var(--navy3); }
+    .post-card-delete {
+      opacity: 0;
+      transition: opacity .18s;
+      margin-left: auto;
+    }
+    .post-card:hover .post-card-delete { opacity: 1; }
+
+    /* ===== EMPTY STATE ===== */
+    .empty-state {
+      text-align: center;
+      padding: 4rem 1rem;
+      background: var(--white);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+    }
+    .empty-icon { font-size: 3.5rem; margin-bottom: 1rem; display: block; }
+    .empty-state h3 { color: var(--navy); margin-bottom: .5rem; }
+    .empty-state p { color: var(--muted); margin-bottom: 1.5rem; font-size: .92rem; }
+
+    /* ===== POST DETAIL ===== */
+    .post-detail {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 2rem;
+    }
+    .post-detail-header {
+      border-bottom: 2px solid var(--light);
+      padding-bottom: 1.2rem;
+      margin-bottom: 1.8rem;
+    }
+    .post-detail-title {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--navy);
+      line-height: 1.35;
+      margin-bottom: .6rem;
+    }
+    .post-detail-meta {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .post-detail-date { color: var(--muted); font-size: .85rem; }
+    .post-detail-back {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.2rem;
+    }
+    /* Markdown rendered content */
+    .md-content { line-height: 1.8; font-size: .97rem; }
+    .md-content h1, .md-content h2 {
+      color: var(--navy);
+      margin: 1.4em 0 .5em;
+      padding-bottom: .3em;
+      border-bottom: 1px solid var(--border);
+    }
+    .md-content h1 { font-size: 1.45rem; }
+    .md-content h2 { font-size: 1.2rem; }
+    .md-content h3 { font-size: 1.05rem; color: var(--navy2); margin: 1em 0 .4em; }
+    .md-content p { margin: .7em 0; }
+    .md-content ul, .md-content ol { padding-left: 1.5em; margin: .6em 0; }
+    .md-content li { margin-bottom: .3em; }
+    .md-content blockquote {
+      border-left: 4px solid var(--gold);
+      background: #fdfaf0;
+      margin: 1em 0;
+      padding: .7em 1em;
+      border-radius: 0 6px 6px 0;
+      color: var(--muted);
+    }
+    .md-content code {
+      background: #edf0f5;
+      border-radius: 4px;
+      padding: .15em .4em;
+      font-size: .88em;
+      font-family: 'Consolas', monospace;
+    }
+    .md-content pre {
+      background: #1a2535;
+      color: #e8f0fe;
+      border-radius: 8px;
+      padding: 1rem 1.2rem;
+      overflow-x: auto;
+      margin: 1em 0;
+    }
+    .md-content pre code { background: none; color: inherit; padding: 0; }
+    .md-content table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    .md-content th, .md-content td {
+      border: 1px solid var(--border);
+      padding: .55em .85em;
+      text-align: left;
+    }
+    .md-content th { background: var(--light); font-weight: 600; color: var(--navy); }
+    .md-content strong { color: var(--navy); }
+    .md-content a { color: var(--navy3); }
+    .md-content hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+
+    /* ===== MODAL ===== */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(10,20,35,.62);
+      backdrop-filter: blur(3px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--white);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.22);
+      animation: modalIn .2s ease;
+      overflow: hidden;
+    }
+    @keyframes modalIn {
+      from { transform: translateY(18px) scale(.97); opacity: 0; }
+      to   { transform: none; opacity: 1; }
+    }
+    .modal-header {
+      padding: 1.2rem 1.5rem;
+      background: var(--navy);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-header h2 { font-size: 1.1rem; font-weight: 700; }
+    .modal-close {
+      background: none; border: none; cursor: pointer;
+      color: rgba(255,255,255,.7);
+      font-size: 1.4rem;
+      line-height: 1;
+      padding: .1rem .35rem;
+      border-radius: 5px;
+      transition: background .15s, color .15s;
+    }
+    .modal-close:hover { background: rgba(255,255,255,.15); color: #fff; }
+    .modal-body { padding: 1.5rem; }
+    .modal-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: .65rem;
+    }
+
+    /* ===== FORMS ===== */
+    .form-group { margin-bottom: 1.1rem; }
+    .form-label {
+      display: block;
+      margin-bottom: .45rem;
+      font-weight: 600;
+      font-size: .9rem;
+      color: var(--navy);
+    }
+    .form-input, .form-textarea {
+      width: 100%;
+      padding: .6rem .85rem;
+      border: 1.5px solid var(--border);
+      border-radius: 7px;
+      font-size: .93rem;
+      font-family: inherit;
+      background: var(--white);
+      color: var(--text);
+      transition: border-color .18s, box-shadow .18s;
+      outline: none;
+    }
+    .form-input:focus, .form-textarea:focus {
+      border-color: var(--navy3);
+      box-shadow: 0 0 0 3px rgba(30,73,118,.12);
+    }
+    .form-textarea {
+      resize: vertical;
+      min-height: 320px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: .88rem;
+      line-height: 1.65;
+    }
+    .form-error {
+      color: var(--red);
+      font-size: .82rem;
+      margin-top: .35rem;
+      display: none;
+    }
+    .form-error.visible { display: block; }
+    .form-hint {
+      color: var(--muted);
+      font-size: .78rem;
+      margin-top: .3rem;
+    }
+
+    /* ===== TOAST ===== */
+    .toast-container {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 300;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+    .toast {
+      background: var(--navy);
+      color: #fff;
+      padding: .7rem 1.1rem;
+      border-radius: 8px;
+      font-size: .88rem;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      animation: toastIn .25s ease;
+      max-width: 300px;
+    }
+    .toast.success { background: var(--green); }
+    .toast.error   { background: var(--red); }
+    @keyframes toastIn {
+      from { transform: translateX(30px); opacity: 0; }
+      to   { transform: none; opacity: 1; }
+    }
+
+    /* ===== LOADING SPINNER ===== */
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2.5px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 600px) {
+      .page-header h1 { font-size: 1.2rem; }
+      .post-detail { padding: 1.2rem; }
+      .post-detail-title { font-size: 1.25rem; }
+      .modal { max-width: 100%; border-radius: 14px 14px 0 0; margin-top: auto; }
+      .modal-overlay { align-items: flex-end; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a class="navbar-brand" href="#" onclick="navigate('co-hoi'); return false;">
+      <div class="logo-icon">₫</div>
+      <div>
+        <span>Ruy Wiki</span>
+        <small>Cộng đồng đầu tư chứng khoán</small>
+      </div>
+    </a>
+    <ul class="nav-links" id="nav-links">
+      <li>
+        <a id="nav-co-hoi" onclick="navigate('co-hoi')" class="active">
+          <span class="nav-icon">📈</span> Cơ hội
+        </a>
+      </li>
+      <li>
+        <a id="nav-chia-se" onclick="navigate('chia-se')">
+          <span class="nav-icon">💬</span> Chia sẻ
+        </a>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ===== MAIN CONTENT ===== -->
+<main class="container" id="main-content"></main>
+
+<!-- ===== TOAST CONTAINER ===== -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ===== PASSWORD MODAL ===== -->
+<div class="modal-overlay" id="password-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>🔐 Xác thực để viết bài</h2>
+      <button class="modal-close" onclick="closePasswordModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-bottom:1rem;color:var(--muted);font-size:.9rem;">Nhập mật khẩu để được phép đăng bài viết.</p>
+      <div class="form-group">
+        <label class="form-label" for="password-input">Mật khẩu</label>
+        <input
+          type="password"
+          id="password-input"
+          class="form-input"
+          placeholder="Nhập mật khẩu..."
+          onkeydown="if(event.key==='Enter') submitPassword()"
+          autocomplete="current-password"
+        />
+        <span class="form-error" id="password-error">Mật khẩu không đúng. Vui lòng thử lại!</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closePasswordModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="submitPassword()">Xác nhận →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== WRITE POST MODAL ===== -->
+<div class="modal-overlay" id="write-modal">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-header">
+      <h2 id="write-modal-title">✏️ Viết bài mới</h2>
+      <button class="modal-close" onclick="closeWriteModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="post-title">Tiêu đề bài viết <span style="color:var(--red)">*</span></label>
+        <input
+          type="text"
+          id="post-title"
+          class="form-input"
+          placeholder="Nhập tiêu đề bài viết..."
+          maxlength="150"
+        />
+        <span class="form-error" id="title-error">Vui lòng nhập tiêu đề bài viết!</span>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="post-content">Nội dung (Markdown) <span style="color:var(--red)">*</span></label>
+        <textarea
+          id="post-content"
+          class="form-textarea"
+          placeholder="Viết nội dung bằng Markdown..."
+          style="min-height:380px;"
+        ></textarea>
+        <span class="form-error" id="content-error">Vui lòng nhập nội dung bài viết!</span>
+        <span class="form-hint">Hỗ trợ cú pháp Markdown: **in đậm**, *nghiêng*, ## Tiêu đề, v.v.</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeWriteModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="submitPost()" id="submit-btn">
+        <span>🚀 Đăng bài</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===================================================
+//  STATE
+// ===================================================
+const CORRECT_PASSWORD = 'duy@123456';
+const KEYS = { 'co-hoi': 'co-hoi-posts', 'chia-se': 'chia-se-posts' };
+const CO_HOI_TEMPLATE = `## Mã chứng khoán
+
+## Ngành nghề
+
+## Ban quản lý
+
+## Khả năng cạnh tranh
+
+## Độ an toàn
+
+## Lưu ý
+`;
+
+let currentMenu = 'co-hoi';      // active navigation tab
+let currentView  = 'list';       // 'list' | 'detail'
+let currentPostId = null;        // id of post being viewed
+let pendingMenu   = null;        // menu waiting after password unlock
+
+// ===================================================
+//  NAVIGATION
+// ===================================================
+function navigate(menu) {
+  currentMenu  = menu;
+  currentView  = 'list';
+  currentPostId = null;
+  updateNavActive();
+  renderPage();
+}
+
+function updateNavActive() {
+  document.getElementById('nav-co-hoi').classList.toggle('active', currentMenu === 'co-hoi');
+  document.getElementById('nav-chia-se').classList.toggle('active', currentMenu === 'chia-se');
+}
+
+// ===================================================
+//  LOCALSTORAGE HELPERS
+// ===================================================
+function getPosts(menu) {
+  try { return JSON.parse(localStorage.getItem(KEYS[menu]) || '[]'); }
+  catch { return []; }
+}
+function savePosts(menu, posts) {
+  localStorage.setItem(KEYS[menu], JSON.stringify(posts));
+}
+function getPost(menu, id) {
+  return getPosts(menu).find(p => p.id === id) || null;
+}
+
+// ===================================================
+//  RENDER
+// ===================================================
+function renderPage() {
+  const root = document.getElementById('main-content');
+  if (currentView === 'detail' && currentPostId) {
+    root.innerHTML = renderDetailHTML();
+  } else {
+    root.innerHTML = renderListHTML();
+  }
+}
+
+function renderListHTML() {
+  const posts = getPosts(currentMenu);
+  const isCoHoi = currentMenu === 'co-hoi';
+  const label   = isCoHoi ? 'Cơ hội' : 'Chia sẻ';
+  const icon    = isCoHoi ? '📈' : '💬';
+  const tagCls  = isCoHoi ? 'post-tag-co-hoi' : 'post-tag-chia-se';
+  const tagText = isCoHoi ? '📈 Cơ hội' : '💬 Chia sẻ';
+
+  let cardsHTML = '';
+  if (posts.length === 0) {
+    cardsHTML = `
+      <div class="empty-state">
+        <span class="empty-icon">${isCoHoi ? '📊' : '📝'}</span>
+        <h3>Chưa có bài viết nào</h3>
+        <p>Hãy là người đầu tiên chia sẻ ${isCoHoi ? 'cơ hội đầu tư' : 'kiến thức'} với cộng đồng!</p>
+        <button class="btn btn-primary" onclick="openPasswordModal('${currentMenu}')">✏️ Viết bài đầu tiên</button>
+      </div>`;
+  } else {
+    // newest first
+    const sorted = [...posts].sort((a, b) => b.createdAt - a.createdAt);
+    cardsHTML = `<div class="posts-grid">` +
+      sorted.map(p => {
+        const excerpt = (p.content || '').replace(/#{1,6}\s*/g, '').replace(/[*_`>\-\[\]()]/g, '').trim().slice(0, 120);
+        const date = new Date(p.createdAt).toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' });
+        return `
+          <div class="post-card" onclick="viewPost('${p.id}')">
+            <div class="post-card-header">
+              <div class="post-card-title">${escapeHtml(p.title)}</div>
+              <div class="post-card-date">📅 ${date}</div>
+            </div>
+            <div class="post-card-excerpt">${escapeHtml(excerpt)}${excerpt.length === 120 ? '…' : ''}</div>
+            <div class="post-card-footer">
+              <span class="post-tag ${tagCls}">${tagText}</span>
+              <button class="btn btn-sm btn-danger post-card-delete"
+                onclick="deletePost(event, '${p.id}')">🗑 Xóa</button>
+            </div>
+          </div>`;
+      }).join('') +
+    `</div>`;
+  }
+
+  return `
+    <div class="page-header">
+      <h1>
+        <div class="page-icon">${icon}</div>
+        ${label}
+        <span style="font-size:.85rem;font-weight:400;color:var(--muted);margin-left:.3rem;">(${posts.length} bài)</span>
+      </h1>
+      <button class="btn btn-primary" onclick="openPasswordModal('${currentMenu}')">✏️ Viết bài</button>
+    </div>
+    ${cardsHTML}
+  `;
+}
+
+function renderDetailHTML() {
+  const post = getPost(currentMenu, currentPostId);
+  if (!post) { navigate(currentMenu); return ''; }
+
+  const isCoHoi = currentMenu === 'co-hoi';
+  const tagCls  = isCoHoi ? 'post-tag-co-hoi' : 'post-tag-chia-se';
+  const tagText = isCoHoi ? '📈 Cơ hội' : '💬 Chia sẻ';
+  const date = new Date(post.createdAt).toLocaleString('vi-VN', {
+    day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'
+  });
+  const renderedContent = marked.parse(post.content || '');
+
+  return `
+    <div class="post-detail-back">
+      <button class="btn btn-outline" onclick="navigate('${currentMenu}')">← Quay lại</button>
+      <button class="btn btn-danger btn-sm" onclick="deletePostAndBack('${post.id}')">🗑 Xóa bài</button>
+    </div>
+    <div class="post-detail">
+      <div class="post-detail-header">
+        <div class="post-detail-title">${escapeHtml(post.title)}</div>
+        <div class="post-detail-meta">
+          <span class="post-tag ${tagCls}">${tagText}</span>
+          <span class="post-detail-date">📅 ${date}</span>
+        </div>
+      </div>
+      <div class="md-content">${renderedContent}</div>
+    </div>
+  `;
+}
+
+// ===================================================
+//  VIEW POST
+// ===================================================
+function viewPost(id) {
+  currentView   = 'detail';
+  currentPostId = id;
+  renderPage();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ===================================================
+//  DELETE POST
+// ===================================================
+function deletePost(event, id) {
+  event.stopPropagation();
+  if (!confirm('Bạn có chắc muốn xóa bài viết này?')) return;
+  const posts = getPosts(currentMenu).filter(p => p.id !== id);
+  savePosts(currentMenu, posts);
+  showToast('Đã xóa bài viết!', 'success');
+  renderPage();
+}
+
+function deletePostAndBack(id) {
+  if (!confirm('Bạn có chắc muốn xóa bài viết này?')) return;
+  const posts = getPosts(currentMenu).filter(p => p.id !== id);
+  savePosts(currentMenu, posts);
+  showToast('Đã xóa bài viết!', 'success');
+  navigate(currentMenu);
+}
+
+// ===================================================
+//  PASSWORD MODAL
+// ===================================================
+function openPasswordModal(menu) {
+  pendingMenu = menu;
+  const modal = document.getElementById('password-modal');
+  const input = document.getElementById('password-input');
+  const err   = document.getElementById('password-error');
+  input.value = '';
+  err.classList.remove('visible');
+  modal.classList.add('open');
+  setTimeout(() => input.focus(), 80);
+}
+
+function closePasswordModal() {
+  document.getElementById('password-modal').classList.remove('open');
+  pendingMenu = null;
+}
+
+function submitPassword() {
+  const input = document.getElementById('password-input');
+  const err   = document.getElementById('password-error');
+  if (input.value === CORRECT_PASSWORD) {
+    err.classList.remove('visible');
+    closePasswordModal();
+    openWriteModal(pendingMenu);
+  } else {
+    err.classList.add('visible');
+    input.value = '';
+    input.focus();
+  }
+}
+
+// ===================================================
+//  WRITE POST MODAL
+// ===================================================
+function openWriteModal(menu) {
+  const title   = document.getElementById('write-modal-title');
+  const content = document.getElementById('post-content');
+  const postTitle = document.getElementById('post-title');
+  const titleErr   = document.getElementById('title-error');
+  const contentErr = document.getElementById('content-error');
+
+  title.textContent = menu === 'co-hoi' ? '✏️ Viết bài — Cơ hội' : '✏️ Viết bài — Chia sẻ';
+  postTitle.value = '';
+  content.value = menu === 'co-hoi' ? CO_HOI_TEMPLATE : '';
+  titleErr.classList.remove('visible');
+  contentErr.classList.remove('visible');
+  document.getElementById('write-modal').dataset.menu = menu;
+  document.getElementById('write-modal').classList.add('open');
+  setTimeout(() => postTitle.focus(), 80);
+}
+
+function closeWriteModal() {
+  document.getElementById('write-modal').classList.remove('open');
+}
+
+function submitPost() {
+  const menu    = document.getElementById('write-modal').dataset.menu;
+  const title   = document.getElementById('post-title').value.trim();
+  const content = document.getElementById('post-content').value.trim();
+  const titleErr   = document.getElementById('title-error');
+  const contentErr = document.getElementById('content-error');
+
+  let valid = true;
+  if (!title)   { titleErr.classList.add('visible');   valid = false; }
+  else            titleErr.classList.remove('visible');
+  if (!content) { contentErr.classList.add('visible'); valid = false; }
+  else            contentErr.classList.remove('visible');
+  if (!valid) return;
+
+  const post = {
+    id: 'post_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    title,
+    content,
+    createdAt: Date.now()
+  };
+  const posts = getPosts(menu);
+  posts.push(post);
+  savePosts(menu, posts);
+
+  closeWriteModal();
+  showToast('Đăng bài thành công! 🎉', 'success');
+
+  // Navigate to the newly created post
+  currentMenu   = menu;
+  currentView   = 'detail';
+  currentPostId = post.id;
+  updateNavActive();
+  renderPage();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ===================================================
+//  TOAST
+// ===================================================
+function showToast(message, type = '') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}</span> ${message}`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(30px)';
+    toast.style.transition = 'opacity .3s, transform .3s';
+    setTimeout(() => toast.remove(), 320);
+  }, 3000);
+}
+
+// ===================================================
+//  UTILS
+// ===================================================
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Close modals on overlay click
+document.getElementById('password-modal').addEventListener('click', function(e) {
+  if (e.target === this) closePasswordModal();
+});
+document.getElementById('write-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeWriteModal();
+});
+
+// ===================================================
+//  BOOT
+// ===================================================
+navigate('co-hoi');
+</script>
+</body>
+</html>

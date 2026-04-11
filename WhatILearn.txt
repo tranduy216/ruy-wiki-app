@@ -1,3 +1,0 @@
-- Codpilot make PR and wait review
-- Synapse, Databrisk, 
-- Web assembly (why it is faster than javascript native code/ VM Code
