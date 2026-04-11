@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -87,10 +87,54 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 //# sourceMappingURL=marked.umd.js.map
 
   </script>
+  <script>/* anti-flash: apply saved theme before CSS renders */
+    (function(){var t=localStorage.getItem('ruy_wiki_theme')||'light';document.documentElement.dataset.theme=t;})();
+  </script>
   <style>
     /* ===== RESET & VARIABLES ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
+      /* Light theme – GitHub style (default) */
+      --bg:        #f6f8fa;
+      --surface:   #ffffff;
+      --surface2:  #f6f8fa;
+      --surface3:  #eaeef2;
+      --blue:      #0969da;
+      --blue2:     #0969da;
+      --blue3:     #54aeff;
+      --border:    #d0d7de;
+      --text:      #1f2328;
+      --muted:     #656d76;
+      --green:     #1a7f37;
+      --red:       #d1242f;
+      --shadow:    0 1px 3px rgba(27,31,36,.12);
+
+      --navy:   #24292f;
+      --navy2:  #2d333b;
+      --navy3:  var(--blue);
+      --gold:   var(--blue);
+      --gold2:  var(--blue2);
+      --gold3:  var(--blue3);
+      --white:  var(--surface);
+      --light:  var(--bg);
+      --gray:   #8c959f;
+      --info:   var(--blue);
+
+      /* Theme-specific tokens */
+      --pre-bg:              #f6f8fa;
+      --pre-color:           #1f2328;
+      --tag-green-bg:        rgba(26,127,55,.1);
+      --tag-green-color:     #1a7f37;
+      --toast-ok-bg:         rgba(26,127,55,.1);
+      --toast-ok-border:     #1a7f37;
+      --toast-ok-color:      #166534;
+      --toast-err-bg:        rgba(209,36,47,.1);
+      --toast-err-border:    #d1242f;
+      --toast-err-color:     #b91c1c;
+      --modal-close-hover:   rgba(0,0,0,.06);
+      --card-hover-shadow:   0 4px 16px rgba(27,31,36,.15);
+    }
+    html[data-theme="dark"] {
       /* Dark theme – blue foreground */
       --bg:        #060b14;
       --surface:   #0d1526;
@@ -106,17 +150,22 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       --red:       #ef4444;
       --shadow:    0 2px 20px rgba(0,0,0,.55);
 
-      /* Legacy aliases so existing CSS keeps working */
       --navy:   #0a1628;
       --navy2:  #0f1e38;
-      --navy3:  var(--blue);
-      --gold:   var(--blue);
-      --gold2:  var(--blue2);
-      --gold3:  var(--blue3);
-      --white:  var(--surface);
-      --light:  var(--bg);
       --gray:   #4a6a8a;
-      --info:   var(--blue);
+
+      --pre-bg:              #050a14;
+      --pre-color:           #93c5fd;
+      --tag-green-bg:        rgba(34,197,94,.12);
+      --tag-green-color:     #4ade80;
+      --toast-ok-bg:         rgba(34,197,94,.15);
+      --toast-ok-border:     #22c55e;
+      --toast-ok-color:      #4ade80;
+      --toast-err-bg:        rgba(239,68,68,.15);
+      --toast-err-border:    #ef4444;
+      --toast-err-color:     #f87171;
+      --modal-close-hover:   rgba(255,255,255,.08);
+      --card-hover-shadow:   0 6px 28px rgba(0,0,0,.45);
     }
     body {
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -257,7 +306,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     }
     .post-card:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 28px rgba(0,0,0,.45);
+      box-shadow: var(--card-hover-shadow);
       border-color: var(--blue);
     }
     .post-card-header {
@@ -276,7 +325,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       padding: .18rem .55rem; border-radius: 50px;
       font-size: .71rem; font-weight: 600; letter-spacing: .02em;
     }
-    .tag-co-hoi  { background: rgba(34,197,94,.12); color: #4ade80; }
+    .tag-co-hoi  { background: var(--tag-green-bg); color: var(--tag-green-color); }
     .tag-chia-se { background: rgba(59,130,246,.12); color: var(--blue2); }
     .post-card-delete { opacity: 0; transition: opacity .18s; margin-left: auto; }
     .post-card:hover .post-card-delete { opacity: 1; }
@@ -330,7 +379,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       padding: .14em .38em; font-size: .88em; font-family: 'Consolas', monospace;
     }
     .md-content pre {
-      background: #050a14; color: var(--blue3);
+      background: var(--pre-bg); color: var(--pre-color);
       border-radius: 8px; padding: 1rem 1.2rem; overflow-x: auto; margin: 1em 0;
       border: 1px solid var(--border);
     }
@@ -397,7 +446,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       line-height: 1; padding: .1rem .3rem; border-radius: 4px;
       transition: background .15s, color .15s;
     }
-    .modal-close:hover { background: rgba(255,255,255,.08); color: var(--text); }
+    .modal-close:hover { background: var(--modal-close-hover); color: var(--text); }
     .modal-body { padding: 1.45rem; }
     .modal-footer {
       padding: 1rem 1.45rem;
@@ -464,8 +513,8 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       box-shadow: var(--shadow); display: flex; align-items: center; gap: .5rem;
       animation: toastIn .25s ease; max-width: 320px;
     }
-    .toast.success { background: rgba(34,197,94,.15); border-color: var(--green); color: #4ade80; }
-    .toast.error   { background: rgba(239,68,68,.15); border-color: var(--red); color: #f87171; }
+    .toast.success { background: var(--toast-ok-bg);  border-color: var(--toast-ok-border);  color: var(--toast-ok-color); }
+    .toast.error   { background: var(--toast-err-bg); border-color: var(--toast-err-border); color: var(--toast-err-color); }
     @keyframes toastIn { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
 
     /* ===== RESPONSIVE ===== */
@@ -477,6 +526,19 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       .modal-overlay { align-items: flex-end; padding: 0; }
       .modal-header { border-radius: 14px 14px 0 0; }
     }
+
+    /* ===== THEME TOGGLE ===== */
+    .nav-theme-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px;
+      padding: 0;
+      border-radius: 6px;
+      background: none; border: none; cursor: pointer;
+      font-size: 1.08rem; line-height: 1;
+      color: rgba(255,255,255,.75);
+      transition: background .15s, color .15s;
+    }
+    .nav-theme-btn:hover { background: rgba(255,255,255,.12); color: #fff; }
   </style>
 </head>
 <body>
@@ -496,6 +558,10 @@ if(__exports != exports)module.exports = exports;return module.exports}));
           <span class="pat-dot" id="pat-dot"></span>
           <span>⚙️ Kết nối</span>
         </a>
+      </li>
+      <li><div class="nav-sep"></div></li>
+      <li>
+        <button id="theme-toggle" class="nav-theme-btn" onclick="toggleTheme()" title="Đổi giao diện"></button>
       </li>
     </ul>
   </div>
@@ -597,7 +663,8 @@ const GITHUB_OWNER  = 'tranduy216';
 const GITHUB_REPO   = 'ruy-wiki-app';
 const GITHUB_BRANCH = 'main';          // Branch for image uploads and raw file URLs
 const GITHUB_API    = 'https://api.github.com';
-const PAT_KEY         = 'ruy_wiki_pat';
+const PAT_KEY       = 'ruy_wiki_pat';
+const THEME_KEY     = 'ruy_wiki_theme';
 
 const CO_HOI_TEMPLATE = `## Mã chứng khoán
 
@@ -625,6 +692,21 @@ let currentView   = 'list';     // 'list' | 'detail'
 let currentPostNo = null;       // GitHub issue number
 let pendingMenu   = null;       // menu awaiting auth flow
 let postsCache    = {};         // { 'co-hoi': [...], 'chia-se': [...] }
+
+// ================================================================
+//  THEME
+// ================================================================
+function getTheme()       { return localStorage.getItem(THEME_KEY) || 'light'; }
+function setThemeClass(t) {
+  document.documentElement.dataset.theme = t;
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
+}
+function toggleTheme() {
+  const next = getTheme() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  setThemeClass(next);
+}
 
 // ================================================================
 //  AUTH HELPERS
@@ -1282,6 +1364,7 @@ function insertAtCursor(textarea, text) {
 // ================================================================
 //  BOOT
 // ================================================================
+setThemeClass(getTheme());
 updatePATDot();
 setupEditorUpload();
 navigate('co-hoi');
