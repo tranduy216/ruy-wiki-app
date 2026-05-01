@@ -809,10 +809,36 @@ async function apiEditIssue(number, title, content) {
 // ================================================================
 //  NAVIGATION
 // ================================================================
+
+// Update the URL hash without adding a duplicate history entry.
+function syncURL(hash) {
+  if (location.hash !== hash) history.pushState(null, '', hash);
+}
+
+// Read the current URL hash and route to the appropriate view.
+async function parseAndRoute() {
+  const raw  = location.hash.slice(1);             // strip leading '#'
+  const [seg, postStr] = (raw || '').split('/');
+  const menu   = LABELS[seg] ? seg : 'co-hoi';
+  const postNo = postStr ? parseInt(postStr, 10) : NaN;
+
+  if (!isNaN(postNo)) {
+    currentMenu = menu;
+    updateNavActive();
+    await viewPost(postNo);
+  } else {
+    navigate(menu);
+  }
+}
+
+// Handle browser back / forward buttons.
+window.addEventListener('popstate', parseAndRoute);
+
 function navigate(menu) {
   currentMenu   = menu;
   currentView   = 'list';
   currentPostNo = null;
+  syncURL('#' + menu);
   updateNavActive();
   loadAndRenderList();
 }
@@ -928,6 +954,7 @@ async function viewPost(number) {
 function renderDetail(post) {
   currentView   = 'detail';
   currentPostNo = post.number;
+  syncURL('#' + currentMenu + '/' + post.number);
 
   const isCoHoi  = (post.labels || []).some(l => l.name === 'co-hoi');
   const tagCls   = isCoHoi ? 'tag-co-hoi'  : 'tag-chia-se';
