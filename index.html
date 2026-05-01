@@ -809,17 +809,62 @@ async function apiEditIssue(number, title, content) {
 // ================================================================
 //  NAVIGATION
 // ================================================================
+
+// Update the URL hash without adding a duplicate history entry.
+function syncURL(hash) {
+  if (location.hash !== hash) history.pushState(null, '', hash);
+}
+
+// Read the current URL hash and route to the appropriate view.
+async function parseAndRoute() {
+  const raw  = location.hash.slice(1);             // strip leading '#'
+  const [seg, ...rest] = (raw || '').split('/');
+  const menu = LABELS[seg] ? seg : 'co-hoi';
+  const slug = rest.join('/');                     // support future sub-paths
+
+  if (slug) {
+    currentMenu = menu;
+    updateNavActive();
+    await viewPostBySlug(menu, slug);
+  } else {
+    navigate(menu);
+  }
+}
+
+// Resolve a title-slug to a post and render it.
+async function viewPostBySlug(menu, slug) {
+  showLoading('Đang tải bài viết…');
+  try {
+    if (!postsCache[menu]) {
+      const posts = await apiFetchIssues(menu);
+      postsCache[menu] = posts;
+    }
+    const post = postsCache[menu].find(p => toSlug(p.title) === slug);
+    if (!post) throw new Error('Không tìm thấy bài viết');
+    renderDetail(post);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (err) {
+    showError(err.message, () => navigate(menu));
+  }
+}
+
+// Handle browser back / forward buttons.
+window.addEventListener('popstate', parseAndRoute);
+
 function navigate(menu) {
   currentMenu   = menu;
   currentView   = 'list';
   currentPostNo = null;
+  syncURL('#' + menu);
   updateNavActive();
   loadAndRenderList();
 }
 
 function updateNavActive() {
-  document.getElementById('nav-co-hoi').classList.toggle('active', currentMenu === 'co-hoi');
-  document.getElementById('nav-chia-se').classList.toggle('active', currentMenu === 'chia-se');
+  Object.keys(LABELS).forEach(menu => {
+    const el = document.getElementById('nav-' + menu);
+    if (el) el.classList.toggle('active', currentMenu === menu);
+  });
   updatePATDot();
 }
 
@@ -928,6 +973,7 @@ async function viewPost(number) {
 function renderDetail(post) {
   currentView   = 'detail';
   currentPostNo = post.number;
+  syncURL('#' + currentMenu + '/' + toSlug(post.title));
 
   const isCoHoi  = (post.labels || []).some(l => l.name === 'co-hoi');
   const tagCls   = isCoHoi ? 'tag-co-hoi'  : 'tag-chia-se';
@@ -1218,6 +1264,30 @@ function showToast(message, type = '') {
 // ================================================================
 //  UTILS
 // ================================================================
+
+// Convert a (possibly Vietnamese) title into a URL-safe slug.
+function toSlug(title) {
+  const map = {
+    'à':'a','á':'a','ả':'a','ã':'a','ạ':'a',
+    'ă':'a','ằ':'a','ắ':'a','ẳ':'a','ẵ':'a','ặ':'a',
+    'â':'a','ầ':'a','ấ':'a','ẩ':'a','ẫ':'a','ậ':'a',
+    'è':'e','é':'e','ẻ':'e','ẽ':'e','ẹ':'e',
+    'ê':'e','ề':'e','ế':'e','ể':'e','ễ':'e','ệ':'e',
+    'ì':'i','í':'i','ỉ':'i','ĩ':'i','ị':'i',
+    'ò':'o','ó':'o','ỏ':'o','õ':'o','ọ':'o',
+    'ô':'o','ồ':'o','ố':'o','ổ':'o','ỗ':'o','ộ':'o',
+    'ơ':'o','ờ':'o','ớ':'o','ở':'o','ỡ':'o','ợ':'o',
+    'ù':'u','ú':'u','ủ':'u','ũ':'u','ụ':'u',
+    'ư':'u','ừ':'u','ứ':'u','ử':'u','ữ':'u','ự':'u',
+    'ỳ':'y','ý':'y','ỷ':'y','ỹ':'y','ỵ':'y',
+    'đ':'d',
+  };
+  return String(title).toLowerCase()
+    .split('').map(c => map[c] || c).join('')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function esc(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1367,7 +1437,7 @@ function insertAtCursor(textarea, text) {
 setThemeClass(getTheme());
 updatePATDot();
 setupEditorUpload();
-navigate('co-hoi');
+parseAndRoute();
 </script>
 </body>
 </html>
