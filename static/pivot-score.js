@@ -10,6 +10,7 @@
   const PIVOT_DATA_TITLE  = '📊 Pivot Score Data';
   const FRED_KEY_STORAGE  = 'ruy_wiki_fred_key';
   const FRED_BASE         = 'https://api.stlouisfed.org/fred/series/observations';
+  const CORS_PROXY        = 'https://corsproxy.io/?';
 
   function getFredKey()   { return localStorage.getItem(FRED_KEY_STORAGE) || ''; }
   function setFredKey(k)  { localStorage.setItem(FRED_KEY_STORAGE, k.trim()); }
@@ -156,7 +157,8 @@
     const url = FRED_BASE + '?series_id=' + encodeURIComponent(seriesId)
       + '&api_key=' + encodeURIComponent(fredKey)
       + '&sort_order=desc&limit=' + limit + '&file_type=json';
-    const res = await fetch(url);
+    const proxyUrl = CORS_PROXY + encodeURIComponent(url);
+    const res = await fetch(proxyUrl);
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
       throw new Error('FRED ' + seriesId + ': HTTP ' + res.status + (txt ? ' – ' + txt.slice(0, 100) : ''));
@@ -557,6 +559,9 @@
       '.ps-table th{background:var(--surface2);border:1px solid var(--border);padding:.48rem .8rem;font-weight:600;color:var(--text);text-align:left}',
       '.ps-table td{border:1px solid var(--border);padding:.48rem .8rem;color:var(--text);vertical-align:top}',
       '.ps-table tr:hover td{background:rgba(59,130,246,.04)}',
+      '.ps-matrix-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:.5rem}',
+      '.ps-matrix-table{min-width:700px}',
+      '.ps-matrix-cur td{background:rgba(59,130,246,.07)!important}',
       '.ps-group-row td{background:var(--surface2);font-weight:700;color:var(--blue2);font-size:.88rem}',
       '.ps-sc{text-align:center;font-weight:700;font-size:.93rem;white-space:nowrap}',
       '.ps-sc-full{color:var(--green)} .ps-sc-half{color:#f59e0b} .ps-sc-zero{color:var(--muted)}',
@@ -659,7 +664,7 @@
       + '<h2>📅 Hiện tại</h2>'
       + '<p class="ps-sub-title">1. Report</p>' + reportHtml
       + '<p class="ps-sub-title" style="margin-top:1.3rem;">2. Matrix action</p>'
-      + '<table class="ps-table" style="max-width:420px;"><thead><tr><th>Pivot score</th><th>Hành động</th><th></th></tr></thead><tbody>' + matrixRows + '</tbody></table>'
+      + '<div class="ps-matrix-wrap"><table class="ps-table ps-matrix-table"><thead><tr><th>Pivot score</th><th>Trạng thái</th><th>Cash</th><th>Gold</th><th>Bonds</th><th>Stocks</th><th>Bitcoin</th><th>Action detail</th></tr></thead><tbody>' + matrixRows + '</tbody></table></div>'
       + '<div class="ps-formula-wrap"><p class="ps-sub-title">3. Công thức</p>'
       + '<table class="ps-table"><thead><tr>'
       + '<th style="width:20%;">Tiêu chí</th><th style="width:22%;">Giá trị thực tế</th><th>Thang điểm</th><th style="width:9%;text-align:center;">Điểm</th>'
