@@ -383,8 +383,8 @@ async function callGemini(prompt) {
     warn('GEMINI_AI_KEY not set – using fallback Gemini scores');
     return makeFallbackScores();
   }
-  step('✨', 'Calling Gemini API (gemini-1.5-flash)…');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+  step('✨', 'Calling Gemini API (gemini-2.5-flash)…');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
   let res;
   try {
     res = await fetch(url, {
