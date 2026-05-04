@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // ================================================================
 //  update-pivot-score.js
-//  Fetches macro data from FRED, scores each criterion, and
-//  updates the "pivot-score-data" GitHub Issue.
+//  Fetches macro data from FRED, calls OpenAI + Gemini for scoring,
+//  and updates the "pivot-score-data" GitHub Issue.
 //
 //  Required env vars:
-//    FRED_API_KEY  – free key from https://fred.stlouisfed.org/
-//    GITHUB_TOKEN  – auto-provided by GitHub Actions (issues:write)
-//    GITHUB_OWNER  – repo owner  (e.g. tranduy216)
-//    GITHUB_REPO   – repo name   (e.g. ruy-wiki-app)
+//    FRED_API_KEY   – free key from https://fred.stlouisfed.org/
+//    GITHUB_TOKEN   – auto-provided by GitHub Actions (issues:write)
+//    GITHUB_OWNER   – repo owner  (e.g. tranduy216)
+//    GITHUB_REPO    – repo name   (e.g. ruy-wiki-app)
+//    OPEN_AI_KEY    – OpenAI API key (optional if GEMINI_AI_KEY set)
+//    GEMINI_AI_KEY  – Gemini API key (optional if OPEN_AI_KEY set)
 // ================================================================
 'use strict';
 
@@ -45,10 +47,12 @@ function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 // ──────────────────────────────────────────────────────────────
 banner('Environment check');
 
-const FRED_KEY = process.env.FRED_API_KEY;
-const GH_TOKEN = process.env.GITHUB_TOKEN;
-const GH_OWNER = process.env.GITHUB_OWNER;
-const GH_REPO  = process.env.GITHUB_REPO;
+const FRED_KEY   = process.env.FRED_API_KEY;
+const GH_TOKEN   = process.env.GITHUB_TOKEN;
+const GH_OWNER   = process.env.GITHUB_OWNER;
+const GH_REPO    = process.env.GITHUB_REPO;
+const OPENAI_KEY = process.env.OPEN_AI_KEY;
+const GEMINI_KEY = process.env.GEMINI_AI_KEY;
 
 let envOk = true;
 if (!FRED_KEY)  { fail('FRED_API_KEY  not set'); envOk = false; }
@@ -62,6 +66,16 @@ else            { ok(`GITHUB_OWNER  = ${GH_OWNER}`); }
 
 if (!GH_REPO)   { fail('GITHUB_REPO   not set'); envOk = false; }
 else            { ok(`GITHUB_REPO   = ${GH_REPO}`); }
+
+if (!OPENAI_KEY && !GEMINI_KEY) {
+  fail('Both OPEN_AI_KEY and GEMINI_AI_KEY are missing. At least one AI key is required.');
+  envOk = false;
+} else {
+  if (!OPENAI_KEY) warn('OPEN_AI_KEY not set – will use fallback scores for GPT');
+  else             ok('OPEN_AI_KEY  set');
+  if (!GEMINI_KEY) warn('GEMINI_AI_KEY not set – will use fallback scores for Gemini');
+  else             ok('GEMINI_AI_KEY set');
+}
 
 if (!envOk) {
   fail('One or more required environment variables are missing. Aborting.');
@@ -126,7 +140,7 @@ async function fredFetchWithRetry(seriesId, limit = 100) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Scoring helpers
+//  FRED data helpers
 // ──────────────────────────────────────────────────────────────
 function obsVal(obs, idx = 0) {
   return obs[idx] ? parseFloat(obs[idx].value) : null;
@@ -143,6 +157,31 @@ function idxMonthsAgo(obs, months) {
   return obs.length - 1;
 }
 
+// ──────────────────────────────────────────────────────────────
+//  Scoring constants & helpers
+// ──────────────────────────────────────────────────────────────
+const INDICATOR_GROUPS = {
+  bond:      ['2y_yield_trend', '2y_vs_ffr'],
+  curve:     ['10y_2y'],
+  labor:     ['unemployment', 'jobless_claims'],
+  inflation: ['core_cpi', 'pce'],
+  fed:       ['fed_tone'],
+  credit:    ['credit_spread'],
+  market:    ['market_behavior']
+};
+
+const WEIGHTS = { bond: 0.25, curve: 0.15, labor: 0.2, inflation: 0.15, fed: 0.1, credit: 0.1, market: 0.05 };
+
+function calcTotal(scores) {
+  let total = 0;
+  for (const [group, keys] of Object.entries(INDICATOR_GROUPS)) {
+    if (!keys.length) continue;
+    const avg = keys.reduce((s, k) => s + (scores[k]?.score || 0), 0) / keys.length;
+    total += WEIGHTS[group] * avg;
+  }
+  return Math.round(total * 100) / 10; // scale to 0-100 (each indicator 0-10, weighted sum 0-10), 1 decimal
+}
+
 function getAction(total) {
   if (total > 80)  return 'Aggressive';
   if (total >= 60) return 'Tăng risk';
@@ -151,245 +190,275 @@ function getAction(total) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Column-average fallback helper
+//  Market context builder
 // ──────────────────────────────────────────────────────────────
-function getColumnAvg(prevEntries, key) {
-  const vals = prevEntries
-    .map(e => e.scores?.[key]?.score)
-    .filter(s => typeof s === 'number');
-  if (!vals.length) return null;
-  return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+function buildMarketContext(fredData) {
+  const dgs2   = fredData['DGS2']         || [];
+  const dgs10  = fredData['DGS10']        || [];
+  const dff    = fredData['DFF']          || [];
+  const t10y2y = fredData['T10Y2Y']       || [];
+  const unrate = fredData['UNRATE']       || [];
+  const icsa   = fredData['ICSA']         || [];
+  const cpi    = fredData['CPILFESL']     || [];
+  const pce    = fredData['PCEPILFE']     || [];
+  const hy     = fredData['BAMLH0A0HYM2'] || [];
+
+  const cur2y    = dgs2.length ? obsVal(dgs2, 0) : null;
+  const ago3m2y  = dgs2.length ? obsVal(dgs2, idxMonthsAgo(dgs2, 3)) : null;
+  const chg2y    = (cur2y != null && ago3m2y != null) ? +(cur2y - ago3m2y).toFixed(3) : null;
+
+  const cur10y   = dgs10.length ? obsVal(dgs10, 0) : null;
+  const curFFR   = dff.length ? obsVal(dff, 0) : null;
+  const curSpread = t10y2y.length ? obsVal(t10y2y, 0) : null;
+
+  const curUNRATE = unrate.length ? obsVal(unrate, 0) : null;
+  const ago6mUN   = unrate.length ? obsVal(unrate, Math.min(unrate.length - 1, 6)) : null;
+  const chgUN     = (curUNRATE != null && ago6mUN != null) ? +(curUNRATE - ago6mUN).toFixed(2) : null;
+
+  const recentICSA = icsa.slice(0, 4).map(o => parseFloat(o.value)).filter(v => !isNaN(v));
+  const avgICSA    = recentICSA.length
+    ? Math.round(recentICSA.reduce((a, b) => a + b, 0) / recentICSA.length)
+    : null;
+
+  const curCPI    = (cpi.length >= 13)
+    ? +(((obsVal(cpi, 0) / obsVal(cpi, 12)) - 1) * 100).toFixed(2) : null;
+  const ago3mCPI  = (cpi.length >= 16)
+    ? +(((obsVal(cpi, 3) / obsVal(cpi, 15)) - 1) * 100).toFixed(2) : null;
+  const chgCPI    = (curCPI != null && ago3mCPI != null) ? +(curCPI - ago3mCPI).toFixed(2) : null;
+
+  const curPCE    = (pce.length >= 13)
+    ? +(((obsVal(pce, 0) / obsVal(pce, 12)) - 1) * 100).toFixed(2) : null;
+
+  const curHY    = hy.length ? obsVal(hy, 0) : null;
+  const ago3mHY  = hy.length ? obsVal(hy, idxMonthsAgo(hy, 3)) : null;
+  const chgHY    = (curHY != null && ago3mHY != null) ? +(curHY - ago3mHY).toFixed(3) : null;
+
+  const lines = [];
+  if (cur2y != null)     lines.push(`US 2Y Yield: ${cur2y}%${chg2y != null ? ` (3-month change: ${chg2y >= 0 ? '+' : ''}${chg2y}%)` : ''}`);
+  if (curFFR != null)    lines.push(`Fed Funds Rate: ${curFFR}%`);
+  if (curSpread != null) lines.push(`10Y-2Y Spread: ${curSpread}%`);
+  if (cur10y != null)    lines.push(`US 10Y Yield: ${cur10y}%`);
+  if (curUNRATE != null) lines.push(`Unemployment Rate: ${curUNRATE}%${chgUN != null ? ` (6-month change: ${chgUN >= 0 ? '+' : ''}${chgUN}%)` : ''}`);
+  if (avgICSA != null)   lines.push(`Initial Jobless Claims (4-week avg): ${avgICSA.toLocaleString()}`);
+  if (curCPI != null)    lines.push(`Core CPI YoY: ${curCPI}%${chgCPI != null ? ` (3-month change: ${chgCPI >= 0 ? '+' : ''}${chgCPI}pp)` : ''}`);
+  if (curPCE != null)    lines.push(`Core PCE YoY: ${curPCE}%`);
+  if (curHY != null)     lines.push(`HY Credit Spread (OAS): ${curHY}%${chgHY != null ? ` (3-month change: ${chgHY >= 0 ? '+' : ''}${chgHY}%)` : ''}`);
+
+  return lines.join('\n');
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Individual scorers  (pure functions – accept pre-fetched obs)
+//  AI prompt builder
 // ──────────────────────────────────────────────────────────────
+function buildPrompt(week, marketContext) {
+  return `Bạn là chuyên gia phân tích tài chính, dựa vào các tiêu chí đánh giá của bảng dưới đây và dữ liệu thị trường hiện tại để cho số điểm:
 
-// 1.1 US 2Y Yield (DGS2)
-function scoreUs2y(obs) {
-  if (!obs.length) return { score: 0, max: 15, value: 'N/A', condition: 'Không có dữ liệu', trend: '→', isFallback: true };
-  const cur  = obsVal(obs, 0);
-  const i1m  = idxMonthsAgo(obs, 1);
-  const i2m  = idxMonthsAgo(obs, 2);
-  const i3m  = idxMonthsAgo(obs, 3);
-  const ago1 = obsVal(obs, i1m);
-  const ago2 = obsVal(obs, i2m);
-  const ago  = obsVal(obs, i3m);
-  const chg  = ago != null ? +(cur - ago).toFixed(3) : null;
-  info(`  DGS2: cur=${cur?.toFixed(2)}  ago(3m)[${obs[i3m]?.date}]=${ago?.toFixed(2)}  Δ=${chg}`);
-  let score, condition;
-  if      (chg == null)  { score = 0;  condition = 'Không đủ dữ liệu'; }
-  else if (chg <= -0.50) { score = 15; condition = 'Giảm mạnh, liên tục'; }
-  else if (chg < -0.05)  { score = 8;  condition = 'Giảm nhẹ'; }
-  else                   { score = 0;  condition = 'Sideway / tăng'; }
-  const trend = chg == null ? '→' : chg <= -0.05 ? '↓' : chg >= 0.05 ? '↑' : '→';
-  const arrow = chg == null ? '' : chg < 0 ? '↓' : '↑';
-  const value = chg != null
-    ? `${cur.toFixed(2)}% (${arrow}${Math.abs(chg).toFixed(2)}% / 3 tháng)` : `${cur.toFixed(2)}%`;
-  const monthly = [
-    { label: '2M ago', date: obs[i2m]?.date?.slice(0, 7), value: ago2 != null ? ago2.toFixed(2) + '%' : 'N/A' },
-    { label: '1M ago', date: obs[i1m]?.date?.slice(0, 7), value: ago1 != null ? ago1.toFixed(2) + '%' : 'N/A' },
-    { label: 'Current', date: obs[0]?.date?.slice(0, 7), value: cur  != null ? cur.toFixed(2)  + '%' : 'N/A' }
-  ];
-  return { score, max: 15, value, condition, trend, monthly };
+DỮ LIỆU THỊ TRƯỜNG (tuần ${week}):
+${marketContext}
+
+BẢNG TIÊU CHÍ:
+Nhóm\tIndicator\t0 (xấu)\t2.5\t5\t7.5\t10 (tốt)
+Bond\t2Y Yield Trend\t↑ mạnh\t↑ nhẹ\tSideway\t↓ nhẹ\t↓ mạnh
+Bond\t2Y vs FFR\t2Y > FFR\t2Y > FFR\t≈\t2Y < FFR\t2Y << FFR
+Curve\t10Y–2Y\tFlatten (2Y ↑)\tFlatten nhẹ\tFlat\tSteepen nhẹ\tSteepen mạnh
+Labor\tUnemployment\t↓\tStable\t↑ nhẹ\t↑ rõ\tSpike
+Labor\tJobless Claims\t↓\tFlat\t↑ nhẹ\t↑ rõ\tSpike
+Inflation\tCore CPI\t↑\tFlat\t↓ nhẹ\t↓ rõ\t↓ mạnh
+Inflation\tPCE\t↑\tFlat\t↓ nhẹ\t↓ rõ\t↓ mạnh
+Fed\tFed Tone (Jerome Powell)\tHawkish mạnh\tHawkish nhẹ\tNeutral\tDovish nhẹ\tDovish rõ
+Credit\tCredit Spread\t↓\tStable\t↑ nhẹ\t↑ rõ\tStress
+Market\tMarket Behavior\tXấu → giảm mạnh\tGiảm nhẹ\tMixed\tKhông giảm\tTăng
+
+weights = {
+  bond: 0.25,
+  curve: 0.15,
+  labor: 0.2,
+  inflation: 0.15,
+  fed: 0.1,
+  credit: 0.1,
+  market: 0.05
 }
 
-// 1.2 Fed Funds Futures (DFF vs DGS2)
-function scoreFedFutures(dffObs, dgs2Obs) {
-  if (!dffObs.length || !dgs2Obs.length) return { score: 0, max: 10, value: 'N/A', condition: 'Không có dữ liệu', trend: '→', isFallback: true };
-  const ffr    = obsVal(dffObs, 0);
-  const twoY   = obsVal(dgs2Obs, 0);
-  const spread = +(ffr - twoY).toFixed(3);
-  info(`  DFF=${ffr?.toFixed(2)}  DGS2=${twoY?.toFixed(2)}  spread=${spread}`);
-  let score, condition;
-  if      (spread >= 0.50) { score = 10; condition = 'Market pricing giảm lãi rõ (≥ 2 cuts)'; }
-  else if (spread > 0.15)  { score = 5;  condition = 'Pricing nhẹ'; }
-  else                     { score = 0;  condition = 'Không pricing'; }
-  const trend = spread >= 0.50 ? '↓' : spread > 0.15 ? '↓' : '→';
-  const value = `FFR ${ffr.toFixed(2)}% vs 2Y ${twoY.toFixed(2)}% → spread ${spread >= 0 ? '+' : ''}${spread.toFixed(2)}%`;
-  return { score, max: 10, value, condition, trend };
+Hãy trả về JSON với format sau (chỉ trả về JSON, không có text khác):
+{
+  "2y_yield_trend": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "2y_vs_ffr": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "10y_2y": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "unemployment": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "jobless_claims": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "core_cpi": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "pce": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "fed_tone": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "credit_spread": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"},
+  "market_behavior": {"score": <0|2.5|5|7.5|10>, "reasoning": "<ngắn gọn>"}
+}`;
 }
 
-// 2.1 Yield Curve (T10Y2Y) – also stores 3-month 10Y & 2Y data
-function scoreYieldCurve(t10y2yObs, dgs2Obs, dgs10Obs) {
-  if (!t10y2yObs.length) return { score: 0, max: 15, value: 'N/A', condition: 'Không có dữ liệu', trend: '→', isFallback: true };
-  const cur     = obsVal(t10y2yObs, 0);
-  const i3m     = idxMonthsAgo(t10y2yObs, 3);
-  const ago     = obsVal(t10y2yObs, i3m);
-  const steepen = ago != null && cur > ago;
-  info(`  T10Y2Y: cur=${cur?.toFixed(2)}  ago(3m)=${ago?.toFixed(2)}  steepen=${steepen}`);
-  let score, condition;
-  if (steepen) {
-    const us2yCur = dgs2Obs.length ? obsVal(dgs2Obs, 0) : null;
-    const us2yAgo = dgs2Obs.length ? obsVal(dgs2Obs, idxMonthsAgo(dgs2Obs, 3)) : null;
-    info(`  DGS2 for steepen check: cur=${us2yCur?.toFixed(2)}  ago=${us2yAgo?.toFixed(2)}`);
-    if (us2yCur != null && us2yAgo != null && us2yCur < us2yAgo) {
-      score = 15; condition = 'Steepening do short-term yield ↓';
-    } else {
-      score = 5;  condition = 'Steepening do long-term ↑';
-    }
-  } else {
-    score = 0; condition = cur < 0 ? 'Vẫn inverted sâu' : 'Sideway / tăng';
+// ──────────────────────────────────────────────────────────────
+//  AI response parser
+// ──────────────────────────────────────────────────────────────
+const VALID_SCORES   = new Set([0, 2.5, 5, 7.5, 10]);
+const REQUIRED_KEYS  = ['2y_yield_trend', '2y_vs_ffr', '10y_2y', 'unemployment',
+                         'jobless_claims', 'core_cpi', 'pce', 'fed_tone',
+                         'credit_spread', 'market_behavior'];
+
+function makeFallbackScores() {
+  const s = {};
+  for (const k of REQUIRED_KEYS) s[k] = { score: 5, reasoning: 'Fallback – AI unavailable' };
+  return s;
+}
+
+function parseAIResponse(text) {
+  // Strip markdown code blocks (handles ```json ... ``` or ``` ... ```)
+  let cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```\s*$/gi, '');
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    // Try to extract JSON object from surrounding text
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error(`No JSON object found in AI response: ${e.message}`);
+    parsed = JSON.parse(m[0]);
   }
-  const trend = steepen ? '↑' : (ago != null && cur < ago ? '↓' : '→');
-  const arrow = ago == null ? '' : cur > ago ? '↑' : '↓';
-  const value = ago != null
-    ? `${cur.toFixed(2)}% (${arrow} từ ${ago.toFixed(2)}% / 3T)` : `${cur.toFixed(2)}%`;
-
-  // Build 3-month snapshot of 10Y and 2Y yields
-  const monthly = [2, 1, 0].map(function(off, i) {
-    const i10y = off > 0 ? idxMonthsAgo(dgs10Obs, off) : 0;
-    const i2y  = off > 0 ? idxMonthsAgo(dgs2Obs,  off) : 0;
-    const v10y = dgs10Obs.length ? obsVal(dgs10Obs, i10y) : null;
-    const v2y  = dgs2Obs.length  ? obsVal(dgs2Obs,  i2y)  : null;
-    const date = dgs10Obs.length && dgs10Obs[i10y] ? dgs10Obs[i10y].date.slice(0, 7) : null;
-    return {
-      label: ['2M ago', '1M ago', 'Current'][i],
-      date,
-      us10y: v10y != null ? v10y.toFixed(2) + '%' : 'N/A',
-      us2y:  v2y  != null ? v2y.toFixed(2)  + '%' : 'N/A'
-    };
-  });
-  return { score, max: 15, value, condition, trend, monthly };
-}
-
-// 3.1 Unemployment (UNRATE)
-function scoreUnemployment(obs) {
-  if (!obs.length) return { score: 0, max: 10, value: 'N/A', condition: 'Không có dữ liệu', trend: '→', isFallback: true };
-  const cur   = obsVal(obs, 0);
-  const idx6m = Math.min(obs.length - 1, 6);
-  const ago   = obsVal(obs, idx6m);
-  const chg   = ago != null ? +(cur - ago).toFixed(2) : null;
-  info(`  UNRATE: cur=${cur?.toFixed(1)}  ago(6m)[${obs[idx6m]?.date}]=${ago?.toFixed(1)}  Δ=${chg}`);
-  let score, condition;
-  if      (chg == null)  { score = 0;  condition = 'Không đủ dữ liệu'; }
-  else if (chg >= 0.40)  { score = 10; condition = 'Tăng nhanh ≥ 0.4–0.5% trong 3–6 tháng'; }
-  else if (chg >= 0.10)  { score = 5;  condition = 'Tăng nhẹ'; }
-  else                   { score = 0;  condition = 'Ổn định'; }
-  const trend = chg == null ? '→' : chg >= 0.10 ? '↑' : '→';
-  const agoMonth = obs[idx6m] ? obs[idx6m].date.slice(0, 7) : '';
-  const value = chg != null
-    ? `${cur.toFixed(1)}% (${chg >= 0 ? '+' : ''}${chg.toFixed(2)}% từ ${agoMonth})` : `${cur.toFixed(1)}%`;
-  return { score, max: 10, value, condition, trend };
-}
-
-// 3.2 Jobless Claims (ICSA)
-function scoreJoblessClaims(obs) {
-  if (obs.length < 5) return { score: 0, max: 10, value: 'N/A', condition: 'Không có dữ liệu', trend: '→', isFallback: true };
-  const ma4 = (start) => {
-    let sum = 0, cnt = 0;
-    for (let i = start; i < Math.min(start + 4, obs.length); i++) { sum += obsVal(obs, i); cnt++; }
-    return cnt ? sum / cnt : null;
-  };
-  const curMA  = ma4(0);
-  const oldIdx = Math.min(obs.length - 1, 12);
-  const oldMA  = ma4(oldIdx);
-  const pct    = (curMA != null && oldMA != null && oldMA > 0)
-    ? ((curMA - oldMA) / oldMA) * 100 : null;
-  info(`  ICSA: MA4(cur)=${curMA?.toFixed(0)}  MA4(12w ago)=${oldMA?.toFixed(0)}  Δ%=${pct?.toFixed(1)}`);
-  let score, condition;
-  if      (pct == null) { score = 0;  condition = 'Không đủ dữ liệu'; }
-  else if (pct >= 15)   { score = 10; condition = 'Tăng mạnh, liên tục'; }
-  else if (pct >= 5)    { score = 5;  condition = 'Tăng nhẹ'; }
-  else                  { score = 0;  condition = 'Flat'; }
-  const trend = pct == null ? '→' : pct >= 5 ? '↑' : pct <= -5 ? '↓' : '→';
-  const curK  = curMA ? Math.round(curMA / 1000) : '?';
-  const value = pct != null
-    ? `${curK}K (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% / 12 tuần)` : `${curK}K`;
-  return { score, max: 10, value, condition, trend };
-}
-
-// 4.1 Core CPI (CPILFESL)
-function scoreCoreCpi(obs) {
-  if (obs.length < 13) return { score: 0, max: 10, value: 'N/A', condition: 'Không có dữ liệu', trend: '→', isFallback: true };
-  const curVal  = obsVal(obs, 0);
-  const yoy12   = obsVal(obs, 12);
-  const curYoY  = yoy12 ? +(((curVal / yoy12) - 1) * 100).toFixed(2) : null;
-  const idx3m   = Math.min(obs.length - 1, 3);
-  const val3m   = obsVal(obs, idx3m);
-  const yoy3m12 = obs[idx3m + 12] ? obsVal(obs, idx3m + 12) : null;
-  const yoY3m   = (val3m && yoy3m12) ? +(((val3m / yoy3m12) - 1) * 100).toFixed(2) : null;
-  const yoyChg  = (curYoY != null && yoY3m != null) ? +(curYoY - yoY3m).toFixed(2) : null;
-  info(`  CPILFESL: curYoY=${curYoY}%  yoY3mAgo=${yoY3m}%  Δpp=${yoyChg}`);
-  let score, condition;
-  if      (yoyChg == null)  { score = 0;  condition = 'Không đủ dữ liệu'; }
-  else if (yoyChg <= -0.30) { score = 10; condition = 'Giảm rõ ràng, liên tục'; }
-  else if (yoyChg < 0)      { score = 5;  condition = 'Giảm nhẹ'; }
-  else                      { score = 0;  condition = 'Flat / tăng'; }
-  const trend = yoyChg == null ? '→' : yoyChg < 0 ? '↓' : yoyChg > 0 ? '↑' : '→';
-  const value = curYoY != null
-    ? `${curYoY.toFixed(2)}% YoY (${yoyChg != null ? (yoyChg >= 0 ? '+' : '') + yoyChg.toFixed(2) + 'pp / 3T' : ''})`
-    : 'N/A';
-  return { score, max: 10, value, condition, trend };
-}
-
-// 4.2 PCE (PCEPILFE)
-function scorePce(obs) {
-  if (obs.length < 13) return { score: 0, max: 5, value: 'N/A', condition: 'Không có dữ liệu', trend: '→', isFallback: true };
-  const curVal  = obsVal(obs, 0);
-  const yoy12   = obsVal(obs, 12);
-  const curYoY  = yoy12 ? +(((curVal / yoy12) - 1) * 100).toFixed(2) : null;
-  const idx3m   = Math.min(obs.length - 1, 3);
-  const val3m   = obsVal(obs, idx3m);
-  const yoy3m12 = obs[idx3m + 12] ? obsVal(obs, idx3m + 12) : null;
-  const yoY3m   = (val3m && yoy3m12) ? +(((val3m / yoy3m12) - 1) * 100).toFixed(2) : null;
-  const yoyChg  = (curYoY != null && yoY3m != null) ? +(curYoY - yoY3m).toFixed(2) : null;
-  info(`  PCEPILFE: curYoY=${curYoY}%  yoY3mAgo=${yoY3m}%  Δpp=${yoyChg}`);
-  let score, condition;
-  if      (yoyChg == null) { score = 0; condition = 'Không đủ dữ liệu'; }
-  else if (yoyChg < 0)     { score = 5; condition = 'Giảm'; }
-  else                     { score = 0; condition = 'Không giảm'; }
-  const trend = yoyChg == null ? '→' : yoyChg < 0 ? '↓' : '↑';
-  const value = curYoY != null ? `${curYoY.toFixed(2)}% YoY` : 'N/A';
-  return { score, max: 5, value, condition, trend };
-}
-
-// 5. Fed Communication – manual, carry over last value or fallback
-function scoreFedCommunication(prevEntries = []) {
-  const prevScore = prevEntries[0]?.scores?.fed_communication?.score ?? null;
-  const score     = prevScore !== null && [0, 5, 10].includes(prevScore) ? prevScore : 5;
-  const map       = { 10: '"Ready to adjust policy"', 5: '"Risks balanced"', 0: 'Vẫn hawkish' };
-  const condition = map[score] || '"Risks balanced"';
-  const trend     = score === 10 ? '↓' : score === 0 ? '↑' : '→';
-  const isFallback = prevScore === null; // no history → allow column-avg fallback
-  info(`  Fed Comm: carried=${score}  isFallback=${isFallback}  condition=${condition}`);
-  return { score, max: 10, value: 'Manual – xem phát biểu Powell gần nhất', condition, trend,
-           ...(isFallback ? { isFallback: true } : {}) };
-}
-
-// 6. Credit Spread (BAMLH0A0HYM2)
-function scoreCreditSpread(obs) {
-  if (!obs.length) return { score: 0, max: 10, value: 'N/A', condition: 'Không có dữ liệu', trend: '→', isFallback: true };
-  const cur  = obsVal(obs, 0);
-  const i3m  = idxMonthsAgo(obs, 3);
-  const ago  = obsVal(obs, i3m);
-  const chg  = ago != null ? +(cur - ago).toFixed(3) : null;
-  info(`  BAMLH0A0HYM2: cur=${cur?.toFixed(2)}  ago(3m)=${ago?.toFixed(2)}  Δ=${chg}`);
-  let score, condition;
-  if      (chg == null) { score = 0;  condition = 'Không đủ dữ liệu'; }
-  else if (chg >= 2.0)  { score = 10; condition = 'Mở rộng mạnh'; }
-  else if (chg >= 0.30) { score = 5;  condition = 'Mở rộng nhẹ'; }
-  else                  { score = 0;  condition = 'Bình thường'; }
-  const trend = chg == null ? '→' : chg >= 0.30 ? '↑' : chg <= -0.30 ? '↓' : '→';
-  const value = chg != null
-    ? `${cur.toFixed(2)}% (${chg >= 0 ? '+' : ''}${chg.toFixed(2)}% / 3T)` : `${cur.toFixed(2)}%`;
-  return { score, max: 10, value, condition, trend };
-}
-
-// 7. Market Behavior – manual, carry over last value or fallback
-function scoreMarketBehavior(prevEntries = []) {
-  const prevScore = prevEntries[0]?.scores?.market_behavior?.score ?? null;
-  const score     = prevScore !== null && [0, 5].includes(prevScore) ? prevScore : 0;
-  const condition = score === 5 ? 'Có' : 'Không';
-  const trend     = score === 5 ? '↑' : '→';
-  const isFallback = prevScore === null; // no history → allow column-avg fallback
-  info(`  Market Behavior: carried=${score}  isFallback=${isFallback}  condition=${condition}`);
-  return { score, max: 5, value: 'Manual – theo dõi reaction thị trường', condition, trend,
-           ...(isFallback ? { isFallback: true } : {}) };
+  for (const k of REQUIRED_KEYS) {
+    if (!parsed[k]) throw new Error(`Missing key: ${k}`);
+    const sc = parsed[k].score;
+    if (!VALID_SCORES.has(sc)) throw new Error(`Invalid score ${sc} for key ${k}`);
+  }
+  return parsed;
 }
 
 // ──────────────────────────────────────────────────────────────
-//  GitHub API helpers (with response logging)
+//  OpenAI API call
+// ──────────────────────────────────────────────────────────────
+async function callOpenAI(prompt) {
+  if (!OPENAI_KEY) {
+    warn('OPEN_AI_KEY not set – using fallback GPT scores');
+    return makeFallbackScores();
+  }
+  step('🤖', 'Calling OpenAI API (gpt-4o-mini)…');
+  let res;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${OPENAI_KEY}`
+      },
+      body: JSON.stringify({
+        model:       'gpt-4o-mini',
+        temperature: 0,
+        max_tokens:  800,
+        messages:    [{ role: 'user', content: prompt }]
+      })
+    });
+  } catch (err) {
+    warn(`OpenAI fetch error: ${err.message} – using fallback GPT scores`);
+    return makeFallbackScores();
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    warn(`OpenAI API HTTP ${res.status}: ${body.slice(0, 200)} – using fallback GPT scores`);
+    return makeFallbackScores();
+  }
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content || '';
+  info(`OpenAI response length: ${text.length} chars`);
+  try {
+    const scores = parseAIResponse(text);
+    ok('OpenAI scores parsed successfully');
+    return scores;
+  } catch (e) {
+    warn(`OpenAI parse error: ${e.message} – using fallback GPT scores`);
+    info(`  Raw response: ${text.slice(0, 300)}`);
+    return makeFallbackScores();
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Gemini API call
+// ──────────────────────────────────────────────────────────────
+async function callGemini(prompt) {
+  if (!GEMINI_KEY) {
+    warn('GEMINI_AI_KEY not set – using fallback Gemini scores');
+    return makeFallbackScores();
+  }
+  step('✨', 'Calling Gemini API (gemini-1.5-flash)…');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+  let res;
+  try {
+    res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        contents:         [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 800 }
+      })
+    });
+  } catch (err) {
+    warn(`Gemini fetch error: ${err.message} – using fallback Gemini scores`);
+    return makeFallbackScores();
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    warn(`Gemini API HTTP ${res.status}: ${body.slice(0, 200)} – using fallback Gemini scores`);
+    return makeFallbackScores();
+  }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  info(`Gemini response length: ${text.length} chars`);
+  try {
+    const scores = parseAIResponse(text);
+    ok('Gemini scores parsed successfully');
+    return scores;
+  } catch (e) {
+    warn(`Gemini parse error: ${e.message} – using fallback Gemini scores`);
+    info(`  Raw response: ${text.slice(0, 300)}`);
+    return makeFallbackScores();
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Chart data builders
+// ──────────────────────────────────────────────────────────────
+function buildBondYieldSeries(dgs2, dgs10) {
+  const result = [];
+  for (let m = 6; m >= 0; m--) {
+    const i2  = (dgs2  && dgs2.length)  ? idxMonthsAgo(dgs2,  m) : -1;
+    const i10 = (dgs10 && dgs10.length) ? idxMonthsAgo(dgs10, m) : -1;
+    const v2   = i2  >= 0 ? obsVal(dgs2,  i2)  : null;
+    const v10  = i10 >= 0 ? obsVal(dgs10, i10) : null;
+    const date = (dgs2 && dgs2.length && dgs2[i2])
+      ? dgs2[i2].date.slice(0, 7)
+      : (dgs10 && dgs10.length && dgs10[i10] ? dgs10[i10].date.slice(0, 7) : null);
+    if (date) result.push({ date, dgs2: v2, dgs10: v10 });
+  }
+  return result;
+}
+
+function buildLaborSeries(unrate, icsa) {
+  const result = [];
+  for (let m = 6; m >= 0; m--) {
+    const iUN = (unrate && unrate.length) ? idxMonthsAgo(unrate, m) : -1;
+    const vUN = iUN >= 0 ? obsVal(unrate, iUN) : null;
+    const date = (unrate && unrate.length && unrate[iUN]) ? unrate[iUN].date.slice(0, 7) : null;
+    let avgICSA = null;
+    if (icsa && icsa.length && date) {
+      const monthObs = icsa.filter(o => o.date.slice(0, 7) === date);
+      if (monthObs.length) {
+        avgICSA = Math.round(monthObs.reduce((s, o) => s + parseFloat(o.value), 0) / monthObs.length);
+      } else {
+        const iIC = idxMonthsAgo(icsa, m);
+        if (iIC >= 0) avgICSA = Math.round(obsVal(icsa, iIC));
+      }
+    }
+    if (date) result.push({ date, unrate: vUN, icsa: avgICSA });
+  }
+  return result;
+}
+
+// ──────────────────────────────────────────────────────────────
+//  GitHub API helpers
 // ──────────────────────────────────────────────────────────────
 async function ghFetch(path, opts = {}) {
   const headers = {
@@ -423,7 +492,7 @@ async function ensureLabel() {
 }
 
 async function findDataIssue() {
-  step('��', 'Looking for existing data issue…');
+  step('🔍', 'Looking for existing data issue…');
   const res  = await ghFetch(`/repos/${GH_OWNER}/${GH_REPO}/issues?labels=${DATA_LABEL}&state=open&per_page=1`);
   if (!res.ok) throw new Error(`GitHub issue list failed: HTTP ${res.status}`);
   const list = await res.json();
@@ -477,7 +546,7 @@ function parseEntries(issueBody) {
 
 function buildIssueBody(entries) {
   const json = JSON.stringify(entries, null, 2);
-  return `# 📊 Pivot Score Data\n\nDữ liệu tự động cập nhật mỗi thứ Hai bởi GitHub Actions.\nChỉnh sửa JSON bên dưới để điều chỉnh điểm thủ công (Fed Communication, Market Behavior).\n\n<!-- PIVOT_DATA_START\n${json}\nPIVOT_DATA_END -->\n`;
+  return `# 📊 Pivot Score Data\n\nDữ liệu tự động cập nhật mỗi thứ Hai bởi GitHub Actions.\n\n<!-- PIVOT_DATA_START\n${json}\nPIVOT_DATA_END -->\n`;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -498,22 +567,21 @@ async function main() {
   const prevEntries   = existingIssue ? parseEntries(existingIssue.body || '') : [];
   info(`Previous entries in issue: ${prevEntries.length}`);
   if (prevEntries.length) {
-    info(`Most recent week: ${prevEntries[0].week}  total: ${prevEntries[0].total}/100`);
+    info(`Most recent week: ${prevEntries[0].week}`);
   }
-  info(`Carrying over from: ${prevEntries.length ? prevEntries[0].week : 'none'}`);
 
   // ── Step 2: Fetch FRED data (sequential, 1s between calls) ───
   banner('Step 2 – Fetch FRED data (sequential, 1s between API calls)');
   const SERIES_CONFIGS = [
-    { id: 'DGS2',         limit: 120 },
-    { id: 'DGS10',        limit: 90  },
+    { id: 'DGS2',         limit: 210 },
+    { id: 'DGS10',        limit: 210 },
     { id: 'DFF',          limit: 10  },
-    { id: 'T10Y2Y',       limit: 90  },
+    { id: 'T10Y2Y',       limit: 210 },
     { id: 'UNRATE',       limit: 12  },
-    { id: 'ICSA',         limit: 20  },
+    { id: 'ICSA',         limit: 32  },
     { id: 'CPILFESL',     limit: 18  },
     { id: 'PCEPILFE',     limit: 18  },
-    { id: 'BAMLH0A0HYM2', limit: 90  }
+    { id: 'BAMLH0A0HYM2', limit: 210 }
   ];
 
   const fredData = {};
@@ -534,64 +602,51 @@ async function main() {
   }
   info(`FRED data load complete in ${Date.now() - t0}ms`);
 
-  // ── Step 3: Score each criterion ─────────────────────────────
-  banner('Step 3 – Score each criterion');
+  // ── Step 3: Build market context ─────────────────────────────
+  banner('Step 3 – Build market context');
+  const marketContext = buildMarketContext(fredData);
+  info('Market context:');
+  marketContext.split('\n').forEach(l => info('  ' + l));
 
-  const fredScores = {
-    us2y:           scoreUs2y(fredData['DGS2']),
-    fed_futures:    scoreFedFutures(fredData['DFF'], fredData['DGS2']),
-    yield_curve:    scoreYieldCurve(fredData['T10Y2Y'], fredData['DGS2'], fredData['DGS10']),
-    unemployment:   scoreUnemployment(fredData['UNRATE']),
-    jobless_claims: scoreJoblessClaims(fredData['ICSA']),
-    core_cpi:       scoreCoreCpi(fredData['CPILFESL']),
-    pce:            scorePce(fredData['PCEPILFE']),
-    credit_spread:  scoreCreditSpread(fredData['BAMLH0A0HYM2'])
+  // ── Step 4: Call AI APIs in parallel ─────────────────────────
+  banner('Step 4 – AI scoring (OpenAI + Gemini in parallel)');
+  const prompt = buildPrompt(week, marketContext);
+  const [parsedGptScores, parsedGeminiScores] = await Promise.all([
+    callOpenAI(prompt),
+    callGemini(prompt)
+  ]);
+
+  // ── Step 5: Calculate totals ──────────────────────────────────
+  banner('Step 5 – Calculate totals');
+  const gpt_total    = calcTotal(parsedGptScores);
+  const gemini_total = calcTotal(parsedGeminiScores);
+  const total        = Math.round((gpt_total + gemini_total) * 5) / 10;
+  console.log(`  GPT total:    ${gpt_total}`);
+  console.log(`  Gemini total: ${gemini_total}`);
+  console.log(`  Average:      ${total}`);
+  console.log(`  Action:       ${getAction(total)}`);
+
+  // ── Step 6: Build chart data ──────────────────────────────────
+  banner('Step 6 – Build chart data');
+  const chartData = {
+    bond_yields: buildBondYieldSeries(fredData['DGS2'], fredData['DGS10']),
+    labor:       buildLaborSeries(fredData['UNRATE'], fredData['ICSA'])
   };
-
-  // ── Step 4: Assemble all scores (FRED + manual) ──────────────
-  banner('Step 4 – Assemble all scores');
-  const scores = {
-    ...fredScores,
-    fed_communication: scoreFedCommunication(prevEntries),
-    market_behavior:   scoreMarketBehavior(prevEntries)
-  };
-
-  // ── Step 5: Apply column-average fallback for every criterion ─
-  banner('Step 5 – Apply column-average fallback (all criteria)');
-  for (const [key, sd] of Object.entries(scores)) {
-    if (sd.isFallback) {
-      const avg = getColumnAvg(prevEntries, key);
-      if (avg !== null) {
-        info(`  ${key}: no data – using column average ${avg}đ (from ${prevEntries.length} entries)`);
-        sd.score     = avg;
-        sd.condition = `Không có dữ liệu – trung bình cột: ${avg}đ`;
-      } else {
-        info(`  ${key}: no data and no history – keeping default score=${sd.score}`);
-      }
-      delete sd.isFallback;
-    }
-  }
-
-  // ── Step 6: Tally ─────────────────────────────────────────────
-  banner('Step 6 – Score summary');
-  const COL = 22;
-  console.log(`  ${'Criterion'.padEnd(COL)} ${'Score'.padStart(5)}   Condition`);
-  console.log(`  ${DASH.slice(0, COL)} ${'-----'} ${'----------'}`);
-  for (const [k, v] of Object.entries(scores)) {
-    console.log(`  ${k.padEnd(COL)} ${String(v.score).padStart(3)}/${v.max}  ${v.condition}`);
-  }
-  const total = Object.values(scores).reduce((s, v) => s + (v.score || 0), 0);
-  console.log(`\n  ${'TOTAL'.padEnd(COL)} ${String(total).padStart(3)}/100`);
-  console.log(`  ${'ACTION'.padEnd(COL)} ${getAction(total).toUpperCase()}`);
+  info(`Bond yields chart: ${chartData.bond_yields.length} points`);
+  info(`Labor chart: ${chartData.labor.length} points`);
 
   // ── Step 7: Build & save issue ───────────────────────────────
   banner('Step 7 – Save to GitHub Issue');
   const newEntry = {
     week,
-    scores,
+    gpt_scores:    parsedGptScores,
+    gemini_scores: parsedGeminiScores,
+    gpt_total,
+    gemini_total,
     total,
-    action:     getAction(total),
-    updated_at: new Date().toISOString()
+    action:        getAction(total),
+    chart_data:    chartData,
+    updated_at:    new Date().toISOString()
   };
 
   const entries = [...prevEntries];

@@ -43,6 +43,28 @@ jobs:
             echo "✅  GITHUB_TOKEN  → set"
           fi
 
+          AI_MISSING=0
+          if [ -z "$OPEN_AI_KEY" ]; then
+            echo "⚠️   OPEN_AI_KEY   → NOT SET"
+            AI_MISSING=$((AI_MISSING+1))
+          else
+            echo "✅  OPEN_AI_KEY   → set (length: ${#OPEN_AI_KEY} chars)"
+          fi
+
+          if [ -z "$GEMINI_AI_KEY" ]; then
+            echo "⚠️   GEMINI_AI_KEY → NOT SET"
+            AI_MISSING=$((AI_MISSING+1))
+          else
+            echo "✅  GEMINI_AI_KEY → set (length: ${#GEMINI_AI_KEY} chars)"
+          fi
+
+          if [ "$AI_MISSING" -eq 2 ]; then
+            echo "❌  Both OPEN_AI_KEY and GEMINI_AI_KEY are missing – at least one is required."
+            echo "     ➜  OPEN_AI_KEY:   Settings › Secrets › Actions › OPEN_AI_KEY"
+            echo "     ➜  GEMINI_AI_KEY: Settings › Secrets › Actions › GEMINI_AI_KEY"
+            MISSING=1
+          fi
+
           echo "--------------------------------------------------"
           echo "✅  GITHUB_OWNER  = $GITHUB_OWNER"
           echo "✅  GITHUB_REPO   = $GITHUB_REPO"
@@ -58,8 +80,10 @@ jobs:
             exit 1
           fi
         env:
-          FRED_API_KEY:  ${{ secrets.FRED_API_KEY }}
-          GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          FRED_API_KEY:   ${{ secrets.FRED_API_KEY }}
+          GITHUB_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          OPEN_AI_KEY:    ${{ secrets.OPEN_AI_KEY }}
+          GEMINI_AI_KEY:  ${{ secrets.GEMINI_AI_KEY }}
 
       # ────────────────────────────────────────────────────────
       - name: 🟢 Setup Node.js 20
@@ -86,10 +110,12 @@ jobs:
         id: run_update
         run: node .github/scripts/update-pivot-score.js
         env:
-          FRED_API_KEY:  ${{ secrets.FRED_API_KEY }}
-          GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_OWNER:  ${{ github.repository_owner }}
-          GITHUB_REPO:   ${{ github.event.repository.name }}
+          FRED_API_KEY:   ${{ secrets.FRED_API_KEY }}
+          GITHUB_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER:   ${{ github.repository_owner }}
+          GITHUB_REPO:    ${{ github.event.repository.name }}
+          OPEN_AI_KEY:    ${{ secrets.OPEN_AI_KEY }}
+          GEMINI_AI_KEY:  ${{ secrets.GEMINI_AI_KEY }}
 
       # ────────────────────────────────────────────────────────
       - name: ✅ Success summary
@@ -115,14 +141,19 @@ jobs:
           echo "     → Settings › Secrets › Actions › FRED_API_KEY"
           echo "     → Free key: https://fred.stlouisfed.org/docs/api/api_key.html"
           echo ""
-          echo "  2. GITHUB_TOKEN lacks issues:write permission"
+          echo "  2. Both OPEN_AI_KEY and GEMINI_AI_KEY are missing"
+          echo "     → At least one AI key is required for scoring"
+          echo "     → Settings › Secrets › Actions › OPEN_AI_KEY"
+          echo "     → Settings › Secrets › Actions › GEMINI_AI_KEY"
+          echo ""
+          echo "  3. GITHUB_TOKEN lacks issues:write permission"
           echo "     → Settings › Actions › General › Workflow permissions"
           echo "     → Set to 'Read and write permissions'"
           echo ""
-          echo "  3. Issues are disabled on this repository"
+          echo "  4. Issues are disabled on this repository"
           echo "     → Settings › General → scroll to Features → enable Issues"
           echo ""
-          echo "  4. FRED API is temporarily unavailable"
+          echo "  5. FRED API or AI API is temporarily unavailable"
           echo "     → Re-run the workflow manually after a few minutes"
           echo ""
           echo "  Full logs are above this step."
