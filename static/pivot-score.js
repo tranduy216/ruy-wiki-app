@@ -162,6 +162,9 @@
       '.ps-table th{background:var(--surface2);border:1px solid var(--border);padding:.48rem .8rem;font-weight:600;color:var(--text);text-align:left}',
       '.ps-table td{border:1px solid var(--border);padding:.48rem .8rem;color:var(--text);vertical-align:top}',
       '.ps-table tr:hover td{background:rgba(59,130,246,.04)}',
+      '.ps-trend{text-align:center;font-size:.9rem;white-space:nowrap}',
+      '.ps-monthly{display:flex;flex-direction:column;gap:.15rem}',
+      '.ps-monthly-row{font-size:.78rem;color:var(--muted);white-space:nowrap}',
       '.ps-matrix-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:.5rem}',
       '.ps-matrix-table{min-width:700px}',
       '.ps-matrix-cur td{background:rgba(59,130,246,.07)!important}',
@@ -186,6 +189,22 @@
       '.ps-hist-entry.open .ps-hist-chev{transform:rotate(180deg)}'
     ].join('\n');
     document.head.appendChild(s);
+  }
+
+  // ── Value-cell helper ────────────────────────────────────────
+  function renderValueCell(d) {
+    if (d && d.monthly && d.monthly.length) {
+      return '<div class="ps-monthly">'
+        + d.monthly.map(function(m) {
+            var line = esc(m.label) + (m.date ? ' (' + esc(m.date) + ')' : '') + ': ';
+            line += m.us10y !== undefined
+              ? '10Y=' + esc(m.us10y) + ', 2Y=' + esc(m.us2y)
+              : esc(m.value);
+            return '<span class="ps-monthly-row">' + line + '</span>';
+          }).join('')
+        + '</div>';
+    }
+    return d && d.value ? esc(d.value) : '–';
   }
 
   // ── Section 1 renderer ──────────────────────────────────────
@@ -234,7 +253,7 @@
         const d = scores[item.key];
         return s + (d ? (d.score || 0) : 0);
       }, 0);
-      formulaRows += '<tr class="ps-group-row"><td colspan="4">' + group.emoji + ' ' + group.group
+      formulaRows += '<tr class="ps-group-row"><td colspan="5">' + group.emoji + ' ' + group.group
         + ' <span style="font-weight:400;color:var(--muted);font-size:.79rem;">(tối đa ' + group.groupMax + 'đ'
         + (hasData ? ' — đạt ' + gTotal + 'đ' : '') + ')</span>'
         + (group.note ? '<br><span style="font-size:.78rem;font-weight:400;color:var(--muted);">' + group.note + '</span>' : '')
@@ -250,14 +269,18 @@
             + '<span class="ps-level-pts">' + lv.score + 'đ</span>'
             + '<span>' + lv.label + (active ? ' ✓' : '') + '</span></div>';
         }).join('');
+        // Value cell: show 3-month breakdown if available, else plain value
+        var valHtml = renderValueCell(d);
+        const trendVal = d && d.trend ? esc(d.trend) : '–';
         formulaRows += '<tr><td>' + item.name + '</td>'
-          + '<td class="ps-val">' + (d && d.value ? esc(d.value) : '–') + '</td>'
+          + '<td class="ps-val">' + valHtml + '</td>'
+          + '<td class="ps-trend">' + trendVal + '</td>'
           + '<td><div class="ps-levels">' + levHtml + '</div></td>'
           + '<td class="ps-sc ' + scCls + '">' + scTxt + '</td></tr>';
       });
     });
     const tfoot = hasData
-      ? '<tfoot><tr><td colspan="3" style="text-align:right;font-weight:700;border-top:2px solid var(--border);">Tổng điểm</td>'
+      ? '<tfoot><tr><td colspan="4" style="text-align:right;font-weight:700;border-top:2px solid var(--border);">Tổng điểm</td>'
         + '<td class="ps-sc" style="border-top:2px solid var(--border);font-size:1rem;">' + entry.total + '/100</td></tr></tfoot>'
       : '';
 
@@ -268,7 +291,7 @@
       + '<div class="ps-matrix-wrap"><table class="ps-table ps-matrix-table"><thead><tr><th>Pivot score</th><th>Trạng thái</th><th>Cash</th><th>Gold</th><th>Bonds</th><th>Stocks</th><th>Bitcoin</th><th>Action detail</th></tr></thead><tbody>' + matrixRows + '</tbody></table></div>'
       + '<div class="ps-formula-wrap"><p class="ps-sub-title">3. Công thức</p>'
       + '<table class="ps-table"><thead><tr>'
-      + '<th style="width:20%;">Tiêu chí</th><th style="width:22%;">Giá trị thực tế</th><th>Thang điểm</th><th style="width:9%;text-align:center;">Điểm</th>'
+      + '<th style="width:18%;">Tiêu chí</th><th style="width:20%;">Giá trị thực tế</th><th style="width:6%;text-align:center;">Trend</th><th>Thang điểm</th><th style="width:9%;text-align:center;">Điểm</th>'
       + '</tr></thead><tbody>' + formulaRows + '</tbody>' + tfoot + '</table></div>'
       + '</div>';
   }
@@ -289,8 +312,10 @@
           const sc = scores[item.key];
           if (!sc) return;
           const scCls = sc.score >= item.max ? 'ps-sc-full' : sc.score > 0 ? 'ps-sc-half' : 'ps-sc-zero';
+          const trendVal = sc.trend ? esc(sc.trend) : '–';
           criteriaRows += '<tr><td>' + item.name + '</td>'
             + '<td class="ps-val">' + (sc.value     ? esc(sc.value)     : '–') + '</td>'
+            + '<td class="ps-trend">' + trendVal + '</td>'
             + '<td class="ps-val">' + (sc.condition ? esc(sc.condition) : '–') + '</td>'
             + '<td class="ps-sc ' + scCls + '">' + sc.score + '/' + item.max + '</td></tr>';
         });
@@ -304,9 +329,9 @@
         + '</div><span class="ps-hist-chev">▼</span></div>'
         + '<div class="ps-hist-body">'
         + '<table class="ps-table"><thead><tr>'
-        + '<th style="width:22%;">Tiêu chí</th><th style="width:25%;">Giá trị</th><th>Đánh giá</th><th style="width:9%;text-align:center;">Điểm</th>'
+        + '<th style="width:20%;">Tiêu chí</th><th style="width:22%;">Giá trị</th><th style="width:6%;text-align:center;">Trend</th><th>Đánh giá</th><th style="width:9%;text-align:center;">Điểm</th>'
         + '</tr></thead><tbody>' + criteriaRows + '</tbody>'
-        + '<tfoot><tr><td colspan="3" style="text-align:right;font-weight:700;border-top:2px solid var(--border);">Tổng</td>'
+        + '<tfoot><tr><td colspan="4" style="text-align:right;font-weight:700;border-top:2px solid var(--border);">Tổng</td>'
         + '<td class="ps-sc" style="border-top:2px solid var(--border);font-size:1rem;">' + entry.total + '/100</td></tr></tfoot>'
         + '</table></div></div>';
     }).join('');
