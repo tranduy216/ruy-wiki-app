@@ -58,7 +58,8 @@ jobs:
             exit 1
           fi
         env:
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          FRED_API_KEY:  ${{ secrets.FRED_API_KEY }}
+          GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
 
       # ────────────────────────────────────────────────────────
       - name: 🟢 Setup Node.js 20
