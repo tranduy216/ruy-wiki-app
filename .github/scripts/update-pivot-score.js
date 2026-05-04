@@ -336,20 +336,21 @@ async function callOpenAI(prompt) {
     warn('OPEN_AI_KEY not set – using fallback GPT scores');
     return makeFallbackScores();
   }
-  step('🤖', 'Calling OpenAI API (gpt-4o-mini)…');
+  step('🤖', 'Calling OpenAI API (gpt-5.4-mini)…');
   let res;
   try {
-    res = await fetch('https://api.openai.com/v1/chat/completions', {
+    res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type':  'application/json',
         'Authorization': `Bearer ${OPENAI_KEY}`
       },
       body: JSON.stringify({
-        model:       'gpt-5.4-mini',
-        temperature: 0,
-        max_tokens:  2000,
-        messages:    [{ role: 'user', content: prompt }]
+        model:              'gpt-5.4-mini',
+        temperature:        0,
+        max_output_tokens:  2000,
+        input:              prompt,
+        store:              true
       })
     });
   } catch (err) {
@@ -362,12 +363,12 @@ async function callOpenAI(prompt) {
     return makeFallbackScores();
   }
   const data = await res.json();
-  const choice = data.choices?.[0];
-  const text = choice?.message?.content || '';
-  const finishReason = choice?.finish_reason || 'unknown';
-  info(`OpenAI response length: ${text.length} chars, finish_reason: ${finishReason}`);
-  if (finishReason === 'length') {
-    warn('OpenAI response was truncated (finish_reason=length) – using fallback GPT scores');
+  const outputItem = data.output?.[0];
+  const text = outputItem?.content?.[0]?.text || '';
+  const status = data.status || 'unknown';
+  info(`OpenAI response length: ${text.length} chars, status: ${status}`);
+  if (status === 'incomplete') {
+    warn('OpenAI response was truncated (status=incomplete) – using fallback GPT scores');
     info(`  Raw response: ${text.slice(0, 300)}`);
     return makeFallbackScores();
   }
