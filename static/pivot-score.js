@@ -155,6 +155,7 @@
   function calcTotal(scores) {
     let total = 0;
     for (const [group, keys] of Object.entries(INDICATOR_GROUPS)) {
+      if (!keys.length) continue;
       const avg = keys.reduce((s, k) => s + (scores[k]?.score || 0), 0) / keys.length;
       total += WEIGHTS[group] * avg;
     }

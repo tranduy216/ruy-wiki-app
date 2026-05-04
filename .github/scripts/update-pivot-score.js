@@ -175,6 +175,7 @@ const WEIGHTS = { bond: 0.25, curve: 0.15, labor: 0.2, inflation: 0.15, fed: 0.1
 function calcTotal(scores) {
   let total = 0;
   for (const [group, keys] of Object.entries(INDICATOR_GROUPS)) {
+    if (!keys.length) continue;
     const avg = keys.reduce((s, k) => s + (scores[k]?.score || 0), 0) / keys.length;
     total += WEIGHTS[group] * avg;
   }
@@ -308,9 +309,8 @@ function makeFallbackScores() {
 }
 
 function parseAIResponse(text) {
-  let cleaned = text.trim();
-  // Strip markdown code blocks
-  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+  // Strip markdown code blocks (handles ```json ... ``` or ``` ... ```)
+  let cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```\s*$/gi, '');
   let parsed;
   try {
     parsed = JSON.parse(cleaned);
