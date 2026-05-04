@@ -47,7 +47,7 @@ const GH_REPO  = process.env.GITHUB_REPO;
 
 let envOk = true;
 if (!FRED_KEY)  { fail('FRED_API_KEY  not set'); envOk = false; }
-else            { ok(`FRED_API_KEY  set (length: ${FRED_KEY.length})`); }
+else            { ok('FRED_API_KEY  set'); }
 
 if (!GH_TOKEN)  { fail('GITHUB_TOKEN  not set'); envOk = false; }
 else            { ok('GITHUB_TOKEN  set'); }
@@ -116,10 +116,10 @@ function idxMonthsAgo(obs, months) {
 }
 
 function getAction(total) {
-  if (total > 80)  return 'aggressive';
-  if (total >= 60) return 'tăng risk';
-  if (total >= 40) return 'build vị thế';
-  return 'phòng thủ';
+  if (total > 80)  return 'Aggressive';
+  if (total >= 60) return 'Tăng risk';
+  if (total >= 40) return 'Build vị thế';
+  return 'Phòng thủ';
 }
 
 // ──────────────────────────────────────────────────────────────
