@@ -179,7 +179,7 @@ function calcTotal(scores) {
     const avg = keys.reduce((s, k) => s + (scores[k]?.score || 0), 0) / keys.length;
     total += WEIGHTS[group] * avg;
   }
-  return Math.round(total * 10 * 10) / 10; // scale to 0-100, 1 decimal
+  return Math.round(total * 100) / 10; // scale to 0-100 (each indicator 0-10, weighted sum 0-10), 1 decimal
 }
 
 function getAction(total) {
@@ -620,7 +620,7 @@ async function main() {
   banner('Step 5 – Calculate totals');
   const gpt_total    = calcTotal(parsedGptScores);
   const gemini_total = calcTotal(parsedGeminiScores);
-  const total        = Math.round((gpt_total + gemini_total) / 2 * 10) / 10;
+  const total        = Math.round((gpt_total + gemini_total) * 5) / 10;
   console.log(`  GPT total:    ${gpt_total}`);
   console.log(`  Gemini total: ${gemini_total}`);
   console.log(`  Average:      ${total}`);

@@ -159,7 +159,7 @@
       const avg = keys.reduce((s, k) => s + (scores[k]?.score || 0), 0) / keys.length;
       total += WEIGHTS[group] * avg;
     }
-    return Math.round(total * 10 * 10) / 10;
+    return Math.round(total * 100) / 10; // scale to 0-100, 1 decimal
   }
 
   function getAction(total) {
