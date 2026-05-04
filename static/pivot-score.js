@@ -361,6 +361,45 @@
     return res.json();
   }
 
+  // ── FRED connection test (uses /fred/releases – lightweight) ──
+  async function fredTestConnection(fredKey) {
+    const url = 'https://api.stlouisfed.org/fred/releases?api_key='
+      + encodeURIComponent(fredKey) + '&limit=1&file_type=json';
+    const proxyUrl = CORS_PROXY + encodeURIComponent(url);
+    const res = await fetch(proxyUrl);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error_message) throw new Error(data.error_message);
+    if (!Array.isArray(data.releases)) throw new Error('Unexpected response');
+    return true;
+  }
+
+  window.testFredConnection = async function() {
+    const input  = document.getElementById('fred-key-input');
+    const btn    = document.getElementById('fred-test-btn');
+    const status = document.getElementById('fred-test-status');
+    let key = input.value.trim();
+    if (key === '••••••••••••••••') key = getFredKey();
+    if (!key) {
+      status.innerHTML = '<span style="color:var(--red);">⚠️ Nhập key trước khi test.</span>';
+      status.style.display = 'block';
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner spinner-sm"></span> Đang kiểm tra…';
+    status.style.display = 'none';
+    try {
+      await fredTestConnection(key);
+      status.innerHTML = '<span style="color:var(--green);">✅ Kết nối thành công! FRED API Key hợp lệ.</span>';
+    } catch (e) {
+      status.innerHTML = '<span style="color:var(--red);">❌ Lỗi: ' + esc(e.message) + '</span>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '🔗 Test kết nối';
+      status.style.display = 'block';
+    }
+  };
+
   // ── FRED modal ──────────────────────────────────────────────
   function injectFredModal() {
     if (document.getElementById('fred-modal')) return;
@@ -380,6 +419,9 @@
       + '<div id="fred-key-clear-row" style="display:none;margin-top:-.3rem;">'
       + '<button class="btn btn-danger btn-sm" onclick="handleClearFredKey()">🗑 Xóa key đã lưu</button>'
       + '<span style="font-size:.78rem;color:var(--muted);margin-left:.6rem;">Key hiện tại đã được lưu.</span></div>'
+      + '<div style="margin-top:.9rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">'
+      + '<button id="fred-test-btn" class="btn btn-outline btn-sm" onclick="testFredConnection()">🔗 Test kết nối</button>'
+      + '<span id="fred-test-status" style="display:none;font-size:.82rem;"></span></div>'
       + '</div>'
       + '<div class="modal-footer"><button class="btn btn-outline" onclick="closeFredModal()">Hủy</button>'
       + '<button class="btn btn-primary" onclick="submitFredKey()">💾 Lưu và tiếp tục</button></div>'
@@ -390,13 +432,15 @@
 
   window.openFredModal = function() {
     injectFredModal();
-    const input = document.getElementById('fred-key-input');
-    const err   = document.getElementById('fred-key-error');
-    const clear = document.getElementById('fred-key-clear-row');
-    const has   = getFredKey();
+    const input  = document.getElementById('fred-key-input');
+    const err    = document.getElementById('fred-key-error');
+    const clear  = document.getElementById('fred-key-clear-row');
+    const status = document.getElementById('fred-test-status');
+    const has    = getFredKey();
     input.value = has ? '••••••••••••••••' : '';
     err.classList.remove('visible');
     clear.style.display = has ? 'block' : 'none';
+    if (status) status.style.display = 'none';
     document.getElementById('fred-modal').classList.add('open');
     if (!has) setTimeout(function() { input.focus(); }, 80);
   };
