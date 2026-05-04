@@ -10,7 +10,7 @@
   const PIVOT_DATA_TITLE  = '📊 Pivot Score Data';
   const FRED_KEY_STORAGE  = 'ruy_wiki_fred_key';
   const FRED_BASE         = 'https://api.stlouisfed.org/fred/series/observations';
-  const CORS_PROXY        = 'https://corsproxy.io/?';
+  const CORS_PROXY        = 'https://api.allorigins.win/raw?url=';
 
   function getFredKey()   { return localStorage.getItem(FRED_KEY_STORAGE) || ''; }
   function setFredKey(k)  { localStorage.setItem(FRED_KEY_STORAGE, k.trim()); }
