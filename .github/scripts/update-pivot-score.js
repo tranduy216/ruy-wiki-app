@@ -348,7 +348,7 @@ async function callOpenAI(prompt) {
       body: JSON.stringify({
         model:       'gpt-4o-mini',
         temperature: 0,
-        max_tokens:  800,
+        max_tokens:  2000,
         messages:    [{ role: 'user', content: prompt }]
       })
     });
@@ -362,8 +362,15 @@ async function callOpenAI(prompt) {
     return makeFallbackScores();
   }
   const data = await res.json();
-  const text = data.choices?.[0]?.message?.content || '';
-  info(`OpenAI response length: ${text.length} chars`);
+  const choice = data.choices?.[0];
+  const text = choice?.message?.content || '';
+  const finishReason = choice?.finish_reason || 'unknown';
+  info(`OpenAI response length: ${text.length} chars, finish_reason: ${finishReason}`);
+  if (finishReason === 'length') {
+    warn('OpenAI response was truncated (finish_reason=length) – using fallback GPT scores');
+    info(`  Raw response: ${text.slice(0, 300)}`);
+    return makeFallbackScores();
+  }
   try {
     const scores = parseAIResponse(text);
     ok('OpenAI scores parsed successfully');
@@ -392,7 +399,11 @@ async function callGemini(prompt) {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
         contents:         [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 800 }
+        generationConfig: {
+          temperature:     0,
+          maxOutputTokens: 4096,
+          thinkingConfig:  { thinkingBudget: 0 }
+        }
       })
     });
   } catch (err) {
@@ -405,8 +416,15 @@ async function callGemini(prompt) {
     return makeFallbackScores();
   }
   const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  info(`Gemini response length: ${text.length} chars`);
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts?.[0]?.text || '';
+  const finishReason = candidate?.finishReason || 'unknown';
+  info(`Gemini response length: ${text.length} chars, finishReason: ${finishReason}`);
+  if (finishReason === 'MAX_TOKENS') {
+    warn('Gemini response was truncated (finishReason=MAX_TOKENS) – using fallback Gemini scores');
+    info(`  Raw response: ${text.slice(0, 300)}`);
+    return makeFallbackScores();
+  }
   try {
     const scores = parseAIResponse(text);
     ok('Gemini scores parsed successfully');
