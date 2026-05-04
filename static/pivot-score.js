@@ -6,7 +6,8 @@
 (function () {
   'use strict';
 
-  const PIVOT_DATA_LABEL  = 'pivot-score-data';
+  const PIVOT_DATA_LABEL    = 'pivot-score-data';
+  const PIVOT_WORKFLOW_FILE = 'update-pivot-score.yml';
 
   const CRITERIA_DEF = [
     {
@@ -325,7 +326,7 @@
       + '<div class="header-actions">'
       + '<button class="btn btn-outline btn-sm" onclick="loadPivotScore()">🔄 Tải lại</button>'
       + '<button class="btn btn-primary btn-sm"'
-      + ' onclick="window.open(\'https://github.com/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/actions/workflows/update-pivot-score.yml\', \'_blank\')"'
+      + ' onclick="window.open(\'https://github.com/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/actions/workflows/' + PIVOT_WORKFLOW_FILE + '\', \'_blank\')"'
       + '>🔄 Update data</button>'
       + '</div></div>'
       + '<div class="ps-sections">'
