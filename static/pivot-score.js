@@ -10,6 +10,7 @@
   const PIVOT_DATA_TITLE  = '📊 Pivot Score Data';
   const FRED_KEY_STORAGE  = 'ruy_wiki_fred_key';
   const FRED_BASE         = 'https://api.stlouisfed.org/fred/series/observations';
+  const CORS_PROXY        = 'https://corsproxy.io/?';
 
   function getFredKey()   { return localStorage.getItem(FRED_KEY_STORAGE) || ''; }
   function setFredKey(k)  { localStorage.setItem(FRED_KEY_STORAGE, k.trim()); }
@@ -156,7 +157,8 @@
     const url = FRED_BASE + '?series_id=' + encodeURIComponent(seriesId)
       + '&api_key=' + encodeURIComponent(fredKey)
       + '&sort_order=desc&limit=' + limit + '&file_type=json';
-    const res = await fetch(url);
+    const proxyUrl = CORS_PROXY + encodeURIComponent(url);
+    const res = await fetch(proxyUrl);
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
       throw new Error('FRED ' + seriesId + ': HTTP ' + res.status + (txt ? ' – ' + txt.slice(0, 100) : ''));
@@ -359,6 +361,45 @@
     return res.json();
   }
 
+  // ── FRED connection test (uses /fred/releases – lightweight) ──
+  async function fredTestConnection(fredKey) {
+    const url = 'https://api.stlouisfed.org/fred/releases?api_key='
+      + encodeURIComponent(fredKey) + '&limit=1&file_type=json';
+    const proxyUrl = CORS_PROXY + encodeURIComponent(url);
+    const res = await fetch(proxyUrl);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error_message) throw new Error(data.error_message);
+    if (!Array.isArray(data.releases)) throw new Error('Unexpected response');
+    return true;
+  }
+
+  window.testFredConnection = async function() {
+    const input  = document.getElementById('fred-key-input');
+    const btn    = document.getElementById('fred-test-btn');
+    const status = document.getElementById('fred-test-status');
+    let key = input.value.trim();
+    if (key === '••••••••••••••••') key = getFredKey();
+    if (!key) {
+      status.innerHTML = '<span style="color:var(--red);">⚠️ Nhập key trước khi test.</span>';
+      status.style.display = 'block';
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner spinner-sm"></span> Đang kiểm tra…';
+    status.style.display = 'none';
+    try {
+      await fredTestConnection(key);
+      status.innerHTML = '<span style="color:var(--green);">✅ Kết nối thành công! FRED API Key hợp lệ.</span>';
+    } catch (e) {
+      status.innerHTML = '<span style="color:var(--red);">❌ Lỗi: ' + esc(e.message) + '</span>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '🔗 Test kết nối';
+      status.style.display = 'block';
+    }
+  };
+
   // ── FRED modal ──────────────────────────────────────────────
   function injectFredModal() {
     if (document.getElementById('fred-modal')) return;
@@ -378,6 +419,9 @@
       + '<div id="fred-key-clear-row" style="display:none;margin-top:-.3rem;">'
       + '<button class="btn btn-danger btn-sm" onclick="handleClearFredKey()">🗑 Xóa key đã lưu</button>'
       + '<span style="font-size:.78rem;color:var(--muted);margin-left:.6rem;">Key hiện tại đã được lưu.</span></div>'
+      + '<div style="margin-top:.9rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">'
+      + '<button id="fred-test-btn" class="btn btn-outline btn-sm" onclick="testFredConnection()">🔗 Test kết nối</button>'
+      + '<span id="fred-test-status" style="display:none;font-size:.82rem;"></span></div>'
       + '</div>'
       + '<div class="modal-footer"><button class="btn btn-outline" onclick="closeFredModal()">Hủy</button>'
       + '<button class="btn btn-primary" onclick="submitFredKey()">💾 Lưu và tiếp tục</button></div>'
@@ -388,13 +432,15 @@
 
   window.openFredModal = function() {
     injectFredModal();
-    const input = document.getElementById('fred-key-input');
-    const err   = document.getElementById('fred-key-error');
-    const clear = document.getElementById('fred-key-clear-row');
-    const has   = getFredKey();
+    const input  = document.getElementById('fred-key-input');
+    const err    = document.getElementById('fred-key-error');
+    const clear  = document.getElementById('fred-key-clear-row');
+    const status = document.getElementById('fred-test-status');
+    const has    = getFredKey();
     input.value = has ? '••••••••••••••••' : '';
     err.classList.remove('visible');
     clear.style.display = has ? 'block' : 'none';
+    if (status) status.style.display = 'none';
     document.getElementById('fred-modal').classList.add('open');
     if (!has) setTimeout(function() { input.focus(); }, 80);
   };
@@ -541,11 +587,13 @@
       '.ps-score-big{font-size:3.2rem;font-weight:900;color:var(--blue);line-height:1;display:flex;align-items:baseline;gap:.2rem}',
       '.ps-score-big small{font-size:1.15rem;font-weight:400;color:var(--muted)}',
       '.ps-action-badge{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem 1.1rem;border-radius:50px;font-size:.98rem;font-weight:700;letter-spacing:.02em;white-space:nowrap}',
-      '.ps-defend{background:rgba(59,130,246,.12);color:var(--blue2);border:2px solid var(--blue)}',
-      '.ps-build{background:rgba(34,197,94,.12);color:var(--green);border:2px solid var(--green)}',
-      '.ps-risk{background:rgba(251,146,60,.12);color:#c2410c;border:2px solid #c2410c}',
+      '.ps-defend{background:rgba(34,197,94,.12);color:var(--green);border:2px solid var(--green)}',
+      '.ps-build{background:rgba(59,130,246,.12);color:var(--blue2);border:2px solid var(--blue)}',
+      '.ps-risk{background:rgba(234,179,8,.12);color:#a16207;border:2px solid #ca8a04}',
       '.ps-aggressive{background:rgba(239,68,68,.12);color:var(--red);border:2px solid var(--red)}',
-      'html[data-theme="dark"] .ps-risk{color:#fb923c;border-color:#fb923c}',
+      'html[data-theme="dark"] .ps-defend{color:#4ade80;border-color:#4ade80}',
+      'html[data-theme="dark"] .ps-build{color:#60a5fa;border-color:#60a5fa}',
+      'html[data-theme="dark"] .ps-risk{color:#facc15;border-color:#facc15}',
       'html[data-theme="dark"] .ps-aggressive{color:#f87171;border-color:#f87171}',
       '.ps-bar-wrap{flex:1;min-width:180px;padding-top:.2rem}',
       '.ps-bar-label{font-size:.8rem;color:var(--muted);margin-bottom:.35rem}',
@@ -555,6 +603,9 @@
       '.ps-table th{background:var(--surface2);border:1px solid var(--border);padding:.48rem .8rem;font-weight:600;color:var(--text);text-align:left}',
       '.ps-table td{border:1px solid var(--border);padding:.48rem .8rem;color:var(--text);vertical-align:top}',
       '.ps-table tr:hover td{background:rgba(59,130,246,.04)}',
+      '.ps-matrix-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:.5rem}',
+      '.ps-matrix-table{min-width:700px}',
+      '.ps-matrix-cur td{background:rgba(59,130,246,.07)!important}',
       '.ps-group-row td{background:var(--surface2);font-weight:700;color:var(--blue2);font-size:.88rem}',
       '.ps-sc{text-align:center;font-weight:700;font-size:.93rem;white-space:nowrap}',
       '.ps-sc-full{color:var(--green)} .ps-sc-half{color:#f59e0b} .ps-sc-zero{color:var(--muted)}',
@@ -602,16 +653,21 @@
     }
 
     const matrixData = [
-      { range: '&lt; 40', cls: 'ps-defend',     action: 'Phòng thủ',    cur: hasData && entry.total < 40 },
-      { range: '40 – 60', cls: 'ps-build',      action: 'Build vị thế', cur: hasData && entry.total >= 40 && entry.total <= 60 },
-      { range: '60 – 80', cls: 'ps-risk',       action: 'Tăng risk',    cur: hasData && entry.total > 60 && entry.total <= 80 },
-      { range: '&gt; 80', cls: 'ps-aggressive', action: 'Aggressive',   cur: hasData && entry.total > 80 }
+      { range: '&lt; 40', cls: 'ps-defend',     action: 'Phòng thủ',    cash: '40–60%', gold: '15–25%', bonds: '15–25% (ngắn hạn)', stocks: '5–10%',  bitcoin: '0–5%',   detail: 'Giữ tiền, tránh risk. Ưu tiên bảo toàn vốn.',            cur: hasData && entry.total < 40 },
+      { range: '40–60',  cls: 'ps-build',      action: 'Build vị thế', cash: '25–40%', gold: '15–20%', bonds: '15–20%',             stocks: '15–25%', bitcoin: '5–10%',  detail: 'DCA dần vào market, chưa all-in.',                         cur: hasData && entry.total >= 40 && entry.total <= 60 },
+      { range: '60–80',  cls: 'ps-risk',       action: 'Tăng risk',    cash: '10–25%', gold: '10–15%', bonds: '10–15%',             stocks: '30–45%', bitcoin: '10–20%', detail: 'Tăng tốc risk asset, bắt đầu front-run pivot.',            cur: hasData && entry.total > 60 && entry.total <= 80 },
+      { range: '&gt; 80', cls: 'ps-aggressive', action: 'Aggressive',   cash: '5–10%',  gold: '5–10%',  bonds: '5–10%',              stocks: '40–55%', bitcoin: '20–35%', detail: 'Risk-on mạnh. BTC + growth stock là driver chính.',        cur: hasData && entry.total > 80 }
     ];
     const matrixRows = matrixData.map(function(r) {
-      return '<tr' + (r.cur ? ' style="background:rgba(59,130,246,.07);"' : '') + '>'
-        + '<td style="font-weight:700;text-align:center;">' + r.range + '</td>'
-        + '<td><span class="ps-action-badge ' + r.cls + '" style="font-size:.8rem;padding:.22rem .65rem;">' + r.action + '</span></td>'
-        + '<td style="text-align:center;color:var(--blue2);font-weight:700;">' + (r.cur ? '← Hiện tại' : '') + '</td>'
+      return '<tr' + (r.cur ? ' class="ps-matrix-cur"' : '') + '>'
+        + '<td style="font-weight:700;text-align:center;white-space:nowrap;">' + r.range + '</td>'
+        + '<td><span class="ps-action-badge ' + r.cls + '" style="font-size:.8rem;padding:.22rem .65rem;">' + r.action + (r.cur ? ' ←' : '') + '</span></td>'
+        + '<td style="text-align:center;">' + r.cash + '</td>'
+        + '<td style="text-align:center;">' + r.gold + '</td>'
+        + '<td style="text-align:center;">' + r.bonds + '</td>'
+        + '<td style="text-align:center;">' + r.stocks + '</td>'
+        + '<td style="text-align:center;">' + r.bitcoin + '</td>'
+        + '<td style="font-size:.8rem;color:var(--muted);">' + r.detail + '</td>'
         + '</tr>';
     }).join('');
 
@@ -652,7 +708,7 @@
       + '<h2>📅 Hiện tại</h2>'
       + '<p class="ps-sub-title">1. Report</p>' + reportHtml
       + '<p class="ps-sub-title" style="margin-top:1.3rem;">2. Matrix action</p>'
-      + '<table class="ps-table" style="max-width:420px;"><thead><tr><th>Pivot score</th><th>Hành động</th><th></th></tr></thead><tbody>' + matrixRows + '</tbody></table>'
+      + '<div class="ps-matrix-wrap"><table class="ps-table ps-matrix-table"><thead><tr><th>Pivot score</th><th>Trạng thái</th><th>Cash</th><th>Gold</th><th>Bonds</th><th>Stocks</th><th>Bitcoin</th><th>Action detail</th></tr></thead><tbody>' + matrixRows + '</tbody></table></div>'
       + '<div class="ps-formula-wrap"><p class="ps-sub-title">3. Công thức</p>'
       + '<table class="ps-table"><thead><tr>'
       + '<th style="width:20%;">Tiêu chí</th><th style="width:22%;">Giá trị thực tế</th><th>Thang điểm</th><th style="width:9%;text-align:center;">Điểm</th>'
