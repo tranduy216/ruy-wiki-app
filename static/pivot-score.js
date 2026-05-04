@@ -12,7 +12,7 @@
   // ── Criteria definition ─────────────────────────────────────
   const CRITERIA_DEF = [
     {
-      group: 'Bond Market', groupKey: 'bond', weight: 0.25, emoji: '��',
+      group: 'Bond Market', groupKey: 'bond', weight: 0.25, emoji: '💵',
       note: '👉 Leading indicator số 1',
       items: [
         { key: '2y_yield_trend', name: '2Y Yield Trend',
@@ -392,7 +392,7 @@
       : '';
 
     return '<div class="ps-card">'
-      + '<h2>�� Hiện tại</h2>'
+      + '<h2>📅 Hiện tại</h2>'
       + '<p class="ps-sub-title">1. Report</p>' + reportHtml
       + '<p class="ps-sub-title" style="margin-top:1.3rem;">2. Matrix action</p>'
       + '<div class="ps-matrix-wrap"><table class="ps-table ps-matrix-table"><thead><tr>'
@@ -618,8 +618,9 @@
         + '<th>Nhận xét AI</th>'
         + '</tr></thead><tbody>' + criteriaRows + '</tbody>'
         + '<tfoot><tr><td style="text-align:right;font-weight:700;border-top:2px solid var(--border);">Tổng</td>'
-        + (newFmt ? '<td colspan="2" style="text-align:center;border-top:2px solid var(--border);font-size:.95rem;">' + tfGpt + tfGem + entry.total + '</td>' : '<td style="border-top:2px solid var(--border);"></td>')
-        + '<td style="border-top:2px solid var(--border);"></td>'
+        + (newFmt
+            ? '<td colspan="2" style="text-align:center;border-top:2px solid var(--border);font-size:.95rem;">' + tfGpt + tfGem + entry.total + '</td><td style="border-top:2px solid var(--border);"></td>'
+            : '<td style="text-align:center;border-top:2px solid var(--border);">' + entry.total + '/100</td>')
         + '</tr></tfoot>'
         + '</table></div></div>';
     }).join('');
