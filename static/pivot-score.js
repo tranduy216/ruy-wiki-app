@@ -541,11 +541,13 @@
       '.ps-score-big{font-size:3.2rem;font-weight:900;color:var(--blue);line-height:1;display:flex;align-items:baseline;gap:.2rem}',
       '.ps-score-big small{font-size:1.15rem;font-weight:400;color:var(--muted)}',
       '.ps-action-badge{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem 1.1rem;border-radius:50px;font-size:.98rem;font-weight:700;letter-spacing:.02em;white-space:nowrap}',
-      '.ps-defend{background:rgba(59,130,246,.12);color:var(--blue2);border:2px solid var(--blue)}',
-      '.ps-build{background:rgba(34,197,94,.12);color:var(--green);border:2px solid var(--green)}',
-      '.ps-risk{background:rgba(251,146,60,.12);color:#c2410c;border:2px solid #c2410c}',
+      '.ps-defend{background:rgba(34,197,94,.12);color:var(--green);border:2px solid var(--green)}',
+      '.ps-build{background:rgba(59,130,246,.12);color:var(--blue2);border:2px solid var(--blue)}',
+      '.ps-risk{background:rgba(234,179,8,.12);color:#a16207;border:2px solid #ca8a04}',
       '.ps-aggressive{background:rgba(239,68,68,.12);color:var(--red);border:2px solid var(--red)}',
-      'html[data-theme="dark"] .ps-risk{color:#fb923c;border-color:#fb923c}',
+      'html[data-theme="dark"] .ps-defend{color:#4ade80;border-color:#4ade80}',
+      'html[data-theme="dark"] .ps-build{color:#60a5fa;border-color:#60a5fa}',
+      'html[data-theme="dark"] .ps-risk{color:#facc15;border-color:#facc15}',
       'html[data-theme="dark"] .ps-aggressive{color:#f87171;border-color:#f87171}',
       '.ps-bar-wrap{flex:1;min-width:180px;padding-top:.2rem}',
       '.ps-bar-label{font-size:.8rem;color:var(--muted);margin-bottom:.35rem}',
@@ -602,16 +604,21 @@
     }
 
     const matrixData = [
-      { range: '&lt; 40', cls: 'ps-defend',     action: 'Phòng thủ',    cur: hasData && entry.total < 40 },
-      { range: '40 – 60', cls: 'ps-build',      action: 'Build vị thế', cur: hasData && entry.total >= 40 && entry.total <= 60 },
-      { range: '60 – 80', cls: 'ps-risk',       action: 'Tăng risk',    cur: hasData && entry.total > 60 && entry.total <= 80 },
-      { range: '&gt; 80', cls: 'ps-aggressive', action: 'Aggressive',   cur: hasData && entry.total > 80 }
+      { range: '&lt; 40', cls: 'ps-defend',     action: 'Phòng thủ',    cash: '40–60%', gold: '15–25%', bonds: '15–25% (ngắn hạn)', stocks: '5–10%',  bitcoin: '0–5%',   detail: 'Giữ tiền, tránh risk. Ưu tiên bảo toàn vốn.',            cur: hasData && entry.total < 40 },
+      { range: '40–60',  cls: 'ps-build',      action: 'Build vị thế', cash: '25–40%', gold: '15–20%', bonds: '15–20%',             stocks: '15–25%', bitcoin: '5–10%',  detail: 'DCA dần vào market, chưa all-in.',                         cur: hasData && entry.total >= 40 && entry.total <= 60 },
+      { range: '60–80',  cls: 'ps-risk',       action: 'Tăng risk',    cash: '10–25%', gold: '10–15%', bonds: '10–15%',             stocks: '30–45%', bitcoin: '10–20%', detail: 'Tăng tốc risk asset, bắt đầu front-run pivot.',            cur: hasData && entry.total > 60 && entry.total <= 80 },
+      { range: '&gt; 80', cls: 'ps-aggressive', action: 'Aggressive',   cash: '5–10%',  gold: '5–10%',  bonds: '5–10%',              stocks: '40–55%', bitcoin: '20–35%', detail: 'Risk-on mạnh. BTC + growth stock là driver chính.',        cur: hasData && entry.total > 80 }
     ];
     const matrixRows = matrixData.map(function(r) {
-      return '<tr' + (r.cur ? ' style="background:rgba(59,130,246,.07);"' : '') + '>'
-        + '<td style="font-weight:700;text-align:center;">' + r.range + '</td>'
-        + '<td><span class="ps-action-badge ' + r.cls + '" style="font-size:.8rem;padding:.22rem .65rem;">' + r.action + '</span></td>'
-        + '<td style="text-align:center;color:var(--blue2);font-weight:700;">' + (r.cur ? '← Hiện tại' : '') + '</td>'
+      return '<tr' + (r.cur ? ' class="ps-matrix-cur"' : '') + '>'
+        + '<td style="font-weight:700;text-align:center;white-space:nowrap;">' + r.range + '</td>'
+        + '<td><span class="ps-action-badge ' + r.cls + '" style="font-size:.8rem;padding:.22rem .65rem;">' + r.action + (r.cur ? ' ←' : '') + '</span></td>'
+        + '<td style="text-align:center;">' + r.cash + '</td>'
+        + '<td style="text-align:center;">' + r.gold + '</td>'
+        + '<td style="text-align:center;">' + r.bonds + '</td>'
+        + '<td style="text-align:center;">' + r.stocks + '</td>'
+        + '<td style="text-align:center;">' + r.bitcoin + '</td>'
+        + '<td style="font-size:.8rem;color:var(--muted);">' + r.detail + '</td>'
         + '</tr>';
     }).join('');
 
