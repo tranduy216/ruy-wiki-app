@@ -1,0 +1,128 @@
+name: Update Pivot Score Data
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'   # Every Monday at 09:00 UTC
+  workflow_dispatch:        # Allow manual trigger from Actions tab
+
+jobs:
+  update-pivot-score:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      # ────────────────────────────────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # ────────────────────────────────────────────────────────
+      - name: 🔍 Check required secrets & env vars
+        run: |
+          echo "=================================================="
+          echo "  Checking required environment variables"
+          echo "=================================================="
+
+          MISSING=0
+
+          if [ -z "$FRED_API_KEY" ]; then
+            echo "❌  FRED_API_KEY  → NOT SET"
+            echo "     ➜  Go to: Settings › Secrets › Actions › New repository secret"
+            echo "     ➜  Name:  FRED_API_KEY"
+            echo "     ➜  Value: Get a free key at https://fred.stlouisfed.org/docs/api/api_key.html"
+            MISSING=1
+          else
+            echo "✅  FRED_API_KEY  → set (length: ${#FRED_API_KEY} chars)"
+          fi
+
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "❌  GITHUB_TOKEN  → NOT SET (this is auto-provided by Actions)"
+            MISSING=1
+          else
+            echo "✅  GITHUB_TOKEN  → set"
+          fi
+
+          echo "--------------------------------------------------"
+          echo "✅  GITHUB_OWNER  = $GITHUB_OWNER"
+          echo "✅  GITHUB_REPO   = $GITHUB_REPO"
+          echo "✅  GITHUB_REF    = $GITHUB_REF"
+          echo "✅  Trigger event = $GITHUB_EVENT_NAME"
+          echo "✅  Run ID        = $GITHUB_RUN_ID"
+          echo "=================================================="
+
+          if [ "$MISSING" -eq 1 ]; then
+            echo ""
+            echo "💥  One or more required secrets are missing."
+            echo "    Fix the issues above and re-run the workflow."
+            exit 1
+          fi
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+
+      # ────────────────────────────────────────────────────────
+      - name: 🟢 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ────────────────────────────────────────────────────────
+      - name: 🔍 Verify Node.js environment
+        run: |
+          echo "=================================================="
+          echo "  Node.js environment"
+          echo "=================================================="
+          echo "  node  : $(node  --version)"
+          echo "  npm   : $(npm   --version)"
+          echo "  cwd   : $(pwd)"
+          echo ""
+          echo "  Script file:"
+          ls -lh .github/scripts/update-pivot-score.js && echo "  ✅ Script found" || echo "  ❌ Script NOT found"
+          echo "=================================================="
+
+      # ────────────────────────────────────────────────────────
+      - name: 📊 Run pivot score update
+        id: run_update
+        run: node .github/scripts/update-pivot-score.js
+        env:
+          FRED_API_KEY:  ${{ secrets.FRED_API_KEY }}
+          GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER:  ${{ github.repository_owner }}
+          GITHUB_REPO:   ${{ github.event.repository.name }}
+
+      # ────────────────────────────────────────────────────────
+      - name: ✅ Success summary
+        if: success()
+        run: |
+          echo "=================================================="
+          echo "  ✅  Pivot score updated successfully!"
+          echo "  Run ID : $GITHUB_RUN_ID"
+          echo "  View   : https://github.com/$GITHUB_OWNER/$GITHUB_REPO/issues"
+          echo "=================================================="
+
+      # ────────────────────────────────────────────────────────
+      - name: ❌ Failure summary
+        if: failure()
+        run: |
+          echo "=================================================="
+          echo "  ❌  Pivot score update FAILED"
+          echo "=================================================="
+          echo ""
+          echo "  Common causes and fixes:"
+          echo ""
+          echo "  1. FRED_API_KEY not set or invalid"
+          echo "     → Settings › Secrets › Actions › FRED_API_KEY"
+          echo "     → Free key: https://fred.stlouisfed.org/docs/api/api_key.html"
+          echo ""
+          echo "  2. GITHUB_TOKEN lacks issues:write permission"
+          echo "     → Settings › Actions › General › Workflow permissions"
+          echo "     → Set to 'Read and write permissions'"
+          echo ""
+          echo "  3. Issues are disabled on this repository"
+          echo "     → Settings › General → scroll to Features → enable Issues"
+          echo ""
+          echo "  4. FRED API is temporarily unavailable"
+          echo "     → Re-run the workflow manually after a few minutes"
+          echo ""
+          echo "  Full logs are above this step."
+          echo "=================================================="

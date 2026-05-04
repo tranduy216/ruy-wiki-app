@@ -552,6 +552,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     <ul class="nav-links">
       <li><a id="nav-co-hoi" onclick="navigate('co-hoi')" class="active"><span>📈</span> Cơ hội</a></li>
       <li><a id="nav-chia-se" onclick="navigate('chia-se')"><span>💬</span> Chia sẻ</a></li>
+      <li><a id="nav-pivot-score" onclick="navigate('pivot-score')"><span>🔄</span> Điểm đảo chiều</a></li>
       <li><div class="nav-sep"></div></li>
       <li>
         <a onclick="openPATModal(false)" title="Cài đặt GitHub PAT để viết bài">
@@ -819,7 +820,7 @@ function syncURL(hash) {
 async function parseAndRoute() {
   const raw  = location.hash.slice(1);             // strip leading '#'
   const [seg, ...rest] = (raw || '').split('/');
-  const menu = LABELS[seg] ? seg : 'co-hoi';
+  const menu = (seg === 'pivot-score' || LABELS[seg]) ? seg : 'co-hoi';
   const slug = rest.join('/');                     // support future sub-paths
 
   if (slug) {
@@ -857,11 +858,15 @@ function navigate(menu) {
   currentPostNo = null;
   syncURL('#' + menu);
   updateNavActive();
-  loadAndRenderList();
+  if (menu === 'pivot-score') {
+    loadPivotScore();
+  } else {
+    loadAndRenderList();
+  }
 }
 
 function updateNavActive() {
-  Object.keys(LABELS).forEach(menu => {
+  ['co-hoi', 'chia-se', 'pivot-score'].forEach(menu => {
     const el = document.getElementById('nav-' + menu);
     if (el) el.classList.toggle('active', currentMenu === menu);
   });
@@ -1439,5 +1444,6 @@ updatePATDot();
 setupEditorUpload();
 parseAndRoute();
 </script>
+<script src="static/pivot-score.js"></script>
 </body>
 </html>
