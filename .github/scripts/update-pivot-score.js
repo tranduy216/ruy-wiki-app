@@ -346,7 +346,7 @@ async function callOpenAI(prompt) {
         'Authorization': `Bearer ${OPENAI_KEY}`
       },
       body: JSON.stringify({
-        model:       'gpt-4o-mini',
+        model:       'gpt-5.4-mini',
         temperature: 0,
         max_tokens:  2000,
         messages:    [{ role: 'user', content: prompt }]
