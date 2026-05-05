@@ -333,6 +333,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     .btn:disabled { opacity: .45; cursor: not-allowed; }
 
     /* ===== POSTS GRID – Metro tiles ===== */
+    /* 1px gap + border background creates hairline tile separators (Metro-style) */
     .posts-grid {
       display: grid;
       gap: 1px;
@@ -916,9 +917,7 @@ async function viewPostBySlug(menu, slug) {
 window.addEventListener('popstate', parseAndRoute);
 
 function navigate(menu) {
-  document.getElementById('navbar')?.classList.remove('nav-open');
-  const toggle = document.getElementById('nav-toggle');
-  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  closeNav();
   currentMenu   = menu;
   currentView   = 'list';
   currentPostNo = null;
@@ -1141,9 +1140,7 @@ function handleWriteClick() {
 //  MODAL: PAT
 // ================================================================
 function openPATModal(afterAuth) {
-  document.getElementById('navbar')?.classList.remove('nav-open');
-  const toggle = document.getElementById('nav-toggle');
-  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  closeNav();
   // afterAuth=true means we'll open write modal next if PAT is saved
   document.getElementById('pat-modal').dataset.afterAuth = afterAuth ? '1' : '0';
   const input = document.getElementById('pat-input');
@@ -1508,6 +1505,12 @@ function insertAtCursor(textarea, text) {
 // ================================================================
 //  HAMBURGER NAV TOGGLE
 // ================================================================
+function closeNav() {
+  document.getElementById('navbar')?.classList.remove('nav-open');
+  const toggle = document.getElementById('nav-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
+
 function toggleNav() {
   const navbar = document.getElementById('navbar');
   const toggle = document.getElementById('nav-toggle');
