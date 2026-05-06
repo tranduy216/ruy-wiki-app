@@ -91,19 +91,21 @@
   }
 
   // ── Helper: split reason text into { summary, bullets } ──────
+  // Handles bullet markers (•, ・), newlines, and sentence boundaries.
   function splitReason(text) {
     if (!text) return { summary: '', bullets: [] };
-    // Try splitting by common bullet markers or newlines first
+    // Try splitting by bullet markers or newlines first
     const byBullet = text.split(/\n|•|・/).map(s => s.trim()).filter(Boolean);
     if (byBullet.length >= 2) {
       return { summary: byBullet[0], bullets: byBullet.slice(1, 4) };
     }
-    // Split by sentence boundaries (period followed by space or end)
-    const bySentence = text.split(/\.\s+/).filter(Boolean);
+    // Split by sentence boundaries (.  !  ?) followed by whitespace or end of string
+    const bySentence = text.split(/[.!?]+(?:\s+|$)/).map(s => s.trim()).filter(Boolean);
     if (bySentence.length >= 2) {
+      const addPunct = s => /[.!?]$/.test(s) ? s : s + '.';
       return {
-        summary: bySentence[0] + '.',
-        bullets: bySentence.slice(1, 4).map(s => s.endsWith('.') ? s : s + '.'),
+        summary: addPunct(bySentence[0]),
+        bullets: bySentence.slice(1, 4).map(addPunct),
       };
     }
     return { summary: text, bullets: [] };

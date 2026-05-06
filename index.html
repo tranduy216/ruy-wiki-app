@@ -99,6 +99,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       /* Light theme – flat/Metro style */
+      --topbar-height: 50px;
       --bg:        #f0f2f5;
       --surface:   #ffffff;
       --surface2:  #f5f7fa;
@@ -284,7 +285,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       background: var(--navy);
       border-bottom: 2px solid var(--blue);
       padding: 0 1rem;
-      height: 50px;
+      height: var(--topbar-height);
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
@@ -303,6 +304,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       transition: color .15s;
     }
     .sidebar-toggle:hover { color: #fff; }
+    .topbar-theme-btn { font-size: 1.1rem; }
 
     /* Sidebar overlay (mobile) */
     .sidebar-overlay {
@@ -317,8 +319,8 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       .topbar { display: flex; }
       .sidebar {
         position: fixed;
-        left: 0; top: 50px;
-        height: calc(100vh - 50px);
+        left: 0; top: var(--topbar-height);
+        height: calc(100vh - var(--topbar-height));
         transform: translateX(-100%);
         transition: transform .25s ease;
         z-index: 150;
@@ -855,11 +857,11 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     <div class="logo-icon">Ruy</div>
     <span class="topbar-brand-name">Wiki</span>
   </div>
-  <button id="topbar-theme" class="sidebar-toggle" onclick="toggleTheme()" title="Đổi giao diện" style="font-size:1.1rem;"></button>
+  <button id="topbar-theme" class="sidebar-toggle topbar-theme-btn" onclick="toggleTheme()" title="Đổi giao diện"></button>
 </div>
 
 <!-- ===== SIDEBAR OVERLAY (mobile) ===== -->
-<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeNav()"></div>
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeNav()" role="button" tabindex="0" aria-label="Đóng menu" onkeydown="if(event.key==='Enter'||event.key===' ')closeNav()"></div>
 
 <!-- ===== PAGE LAYOUT ===== -->
 <div class="page-layout">
