@@ -1,0 +1,134 @@
+name: Update VN Index Phase Data
+
+on:
+  schedule:
+    - cron: '0 10 * * 2-6'   # Tue-Sat at 10:00 UTC (17:00 ICT) – after VN market close
+  workflow_dispatch:           # Allow manual trigger from Actions tab
+
+jobs:
+  update-vn-index:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      # ────────────────────────────────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # ────────────────────────────────────────────────────────
+      - name: 🔍 Check required secrets
+        run: |
+          echo "=================================================="
+          echo "  Checking required environment variables"
+          echo "=================================================="
+
+          MISSING=0
+
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "❌  GITHUB_TOKEN  → NOT SET"
+            MISSING=1
+          else
+            echo "✅  GITHUB_TOKEN  → set"
+          fi
+
+          AI_MISSING=0
+          if [ -z "$OPEN_AI_KEY" ]; then
+            echo "⚠️   OPEN_AI_KEY   → NOT SET"
+            AI_MISSING=$((AI_MISSING+1))
+          else
+            echo "✅  OPEN_AI_KEY   → set (length: ${#OPEN_AI_KEY} chars)"
+          fi
+
+          if [ -z "$GEMINI_AI_KEY" ]; then
+            echo "⚠️   GEMINI_AI_KEY → NOT SET"
+            AI_MISSING=$((AI_MISSING+1))
+          else
+            echo "✅  GEMINI_AI_KEY → set (length: ${#GEMINI_AI_KEY} chars)"
+          fi
+
+          if [ "$AI_MISSING" -eq 2 ]; then
+            echo "❌  Both OPEN_AI_KEY and GEMINI_AI_KEY are missing."
+            echo "     ➜  Settings › Secrets › Actions › OPEN_AI_KEY"
+            echo "     ➜  Settings › Secrets › Actions › GEMINI_AI_KEY"
+            MISSING=1
+          fi
+
+          echo "--------------------------------------------------"
+          echo "✅  GITHUB_OWNER  = $GITHUB_OWNER"
+          echo "✅  GITHUB_REPO   = $GITHUB_REPO"
+          echo "✅  Trigger event = $GITHUB_EVENT_NAME"
+          echo "=================================================="
+
+          if [ "$MISSING" -eq 1 ]; then
+            echo "💥  One or more required secrets are missing."
+            exit 1
+          fi
+        env:
+          GITHUB_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          OPEN_AI_KEY:    ${{ secrets.OPEN_AI_KEY }}
+          GEMINI_AI_KEY:  ${{ secrets.GEMINI_AI_KEY }}
+
+      # ────────────────────────────────────────────────────────
+      - name: 🟢 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ────────────────────────────────────────────────────────
+      - name: 🔍 Verify environment
+        run: |
+          echo "  node  : $(node  --version)"
+          echo "  npm   : $(npm   --version)"
+          echo "  cwd   : $(pwd)"
+          ls -lh .github/scripts/update-vn-index.js && echo "  ✅ Script found" || echo "  ❌ Script NOT found"
+
+      # ────────────────────────────────────────────────────────
+      - name: 📊 Run VN Index phase update
+        id: run_update
+        run: node .github/scripts/update-vn-index.js
+        env:
+          GITHUB_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER:   ${{ github.repository_owner }}
+          GITHUB_REPO:    ${{ github.event.repository.name }}
+          OPEN_AI_KEY:    ${{ secrets.OPEN_AI_KEY }}
+          GEMINI_AI_KEY:  ${{ secrets.GEMINI_AI_KEY }}
+
+      # ────────────────────────────────────────────────────────
+      - name: ✅ Success summary
+        if: success()
+        run: |
+          echo "=================================================="
+          echo "  ✅  VN Index Phase updated successfully!"
+          echo "  Run ID : $GITHUB_RUN_ID"
+          echo "  View   : https://github.com/$GITHUB_OWNER/$GITHUB_REPO/issues"
+          echo "=================================================="
+
+      # ────────────────────────────────────────────────────────
+      - name: ❌ Failure summary
+        if: failure()
+        run: |
+          echo "=================================================="
+          echo "  ❌  VN Index Phase update FAILED"
+          echo "=================================================="
+          echo ""
+          echo "  Common causes and fixes:"
+          echo ""
+          echo "  1. Both OPEN_AI_KEY and GEMINI_AI_KEY are missing"
+          echo "     → At least one AI key is required"
+          echo "     → Settings › Secrets › Actions › OPEN_AI_KEY"
+          echo "     → Settings › Secrets › Actions › GEMINI_AI_KEY"
+          echo ""
+          echo "  2. GITHUB_TOKEN lacks issues:write permission"
+          echo "     → Settings › Actions › General › Workflow permissions"
+          echo "     → Set to 'Read and write permissions'"
+          echo ""
+          echo "  3. Issues are disabled on this repository"
+          echo "     → Settings › General → Features → enable Issues"
+          echo ""
+          echo "  4. TCBS API or AI API temporarily unavailable"
+          echo "     → Re-run the workflow manually after a few minutes"
+          echo ""
+          echo "  Full logs are above this step."
+          echo "=================================================="
