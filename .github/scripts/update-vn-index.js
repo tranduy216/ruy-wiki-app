@@ -95,112 +95,101 @@ function buildRateDateScaffold(months = 6) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Comprehensive AI prompt – all data in one shot
+//  OpenAI prompt – phase assessment only, no web search
+//  (keeps input tokens ~1500, well under the 10 000 TPM limit)
 // ──────────────────────────────────────────────────────────────
-const AI_SYSTEM_PROMPT = `You are a quantitative analyst specializing in the Vietnamese stock market (VN Index).
+const OPENAI_PHASE_PROMPT = `Bạn là chuyên gia phân tích thị trường chứng khoán Việt Nam (VNINDEX).
+Đánh giá pha thị trường dựa trên ĐÚNG các tiêu chí sau – KHÔNG chỉ dựa vào MACD:
 
-IMPORTANT: Search the web to get REAL and CURRENT market data. Use sources such as:
-- HOSE/HNX official sites, VietstockFinance (vietstock.vn), CafeF (cafef.vn), TradingView VN30/VNINDEX
-- SBV (State Bank of Vietnam) for interest rate data
-- Any recent news or financial data portal covering the Vietnamese market
+TIÊU CHÍ BẮT BUỘC:
+1. Đường trung bình động: vị trí và xu hướng MA10, MA20, MA50
+2. Thanh khoản: volume trung bình 2 tuần gần nhất so với trung bình 2 tháng (tăng/giảm/%)
+3. Breadth: tỷ lệ cổ tăng/cổ giảm (advance/decline ratio) theo phiên
+4. Lãi suất phi rủi ro: lãi suất huy động/SBV/liên ngân hàng so với lịch sử
+5. Lợi suất VNIndex: P/E yield của VNINDEX so với lãi suất phi rủi ro (spread)
 
-Based on REAL data fetched from the web, provide a complete analysis package for the requested month.
+Pha thị trường: sideway | uptrend | distribution | downtrend | panic | recovery
+- uptrend: MA20>MA50, vol tăng, adv>dec, P/E yield hấp dẫn hơn lãi suất phi rủi ro
+- distribution: Index flat/tăng nhưng breadth yếu (dec>adv), vol giảm dần
+- downtrend: MA20<MA50, dec>adv liên tục, vol thấp
+- panic: Giảm mạnh đột ngột, vol tăng vọt 1.5-2×, dec/adv>3
+- recovery: Hồi mạnh sau panic, breadth cải thiện, vol tăng, dip-buying rõ
+- sideway: MA20≈MA50, breadth cân bằng, vol thấp/flat
 
-You must provide ALL of the following:
-1. Current market phase assessment
-2. Recent daily VN Index OHLCV + MA data (last ~20 trading days of the current month, oldest→newest)
-3. Market breadth estimates (advance/decline %) for those same trading days
-4. Panic score for each trading day
-5. Vietnam interest rate data (last 6 months, oldest→newest)
+Trả về JSON (chỉ JSON, không text khác):
+{"current_phase":"...","next_phase_prediction":"...","phase_confidence":65,"phase_reason":"...","next_phase_reason":"...","market_commentary":{"vn_index_trend":"...","breadth_trend":"...","market_state":"...","interest_rate_trend":"..."}}`;
+
+// ──────────────────────────────────────────────────────────────
+//  Gemini prompt – comprehensive with googleSearch
+//  Condensed to reduce tokens while keeping all required fields
+// ──────────────────────────────────────────────────────────────
+const GEMINI_FULL_PROMPT = `You are a VN Index quantitative analyst. Search the web for REAL current data from HOSE/HNX, VietstockFinance (vietstock.vn), CafeF (cafef.vn), TradingView, SBV (State Bank of Vietnam).
+
+ASSESSMENT CRITERIA (mandatory – do NOT base assessment solely on MACD):
+1. Moving averages: MA10, MA20, MA50 – their positions and cross signals
+2. Liquidity/Volume: compute 2-week average volume vs 2-month average volume (ratio & trend)
+3. Breadth: advance/decline ratio per session (số cổ tăng vs số cổ giảm)
+4. Risk-free rate: SBV reference rate, interbank rate, 12-month deposit rate vs historical
+5. VN Index yield: implied earnings yield (1/P/E) vs risk-free rate spread
 
 Phases: sideway | uptrend | distribution | downtrend | panic | recovery
+- uptrend: MA20>MA50, vol rising (2w avg > 2m avg), adv>dec, P/E yield attractive vs risk-free
+- distribution: Index flat/up but breadth weakening (dec>adv), vol declining (2w avg < 2m avg)
+- downtrend: MA20<MA50, persistent dec>adv, vol low
+- panic: Sharp drop, vol spike 1.5-2× of 2m avg, dec/adv>3-4, widespread limit-down
+- recovery: Strong bounce after panic, breadth improving, vol increasing, dip-buying visible
+- sideway: MA20≈MA50, balanced adv/dec, vol flat relative to 2m avg
 
-Phase rules:
-- sideway: Price ranging, MA20 ≈ MA50, balanced advance/decline, low volume
-- uptrend: Higher highs, MA20 > MA50, adv > dec, breadth strong
-- distribution: Index still up or flat, but breadth weakening (dec > adv despite index), volume declining
-- downtrend: Lower highs, MA20 < MA50, persistent dec > adv
-- panic: Sharp drop, volume spike (1.5-2x normal), dec/adv > 3-4, widespread limit-down
-- recovery: Strong bounce after panic, breadth improving, dip-buying visible
+Panic score (1–10): index<=-4%→+3, <=-3%→+2, <=-2%→+1; vol>2×20d avg→+2, >1.5×→+1; dec/adv>4→+3, >3→+2, >2→+1; label: "panic"(≥7)/"high_stress"(≥5)/"normal"(<5)
 
-Panic score rules (1–10, sum of components):
-- Index change <= -4% → +3, <= -3% → +2, <= -2% → +1
-- Volume > 2× 20d avg → +2, > 1.5× → +1
-- dec/adv ratio > 4 → +3, > 3 → +2, > 2 → +1
-- Label: "panic" (score≥7), "high_stress" (score≥5), "normal" (score<5)
+Data to collect (for the requested month):
+- vn_index: last ~20 trading days, oldest→newest; volume in VND; ma10/ma50=null if insufficient history
+- breadth: adv_pct, dec_pct, unch_pct per day (same dates as vn_index)
+- panic_scores: per day (same dates)
+- interest_rates: exactly 6 monthly points oldest→newest; null if unavailable for that month
+- liquidity_summary: avg_volume_2w (2-week avg VND), avg_volume_2m (2-month avg VND), volume_ratio=2w/2m, trend="rising"|"declining"|"stable"
 
-CRITICAL RULES:
-1. current_phase, next_phase_prediction, phase_confidence, phase_reason MUST always be filled.
-   Even if you cannot obtain exact numeric data, you MUST assess the phase qualitatively
-   using the phase rules above (MA relationship, breadth direction, volume, market behavior).
-2. market_commentary MUST always be filled with qualitative observations in Vietnamese.
-   This is the primary fallback when numeric chart data is unavailable.
-3. If you cannot provide exact numeric rows for vn_index/breadth/panic_scores/interest_rates,
-   set those arrays to [] but NEVER leave market_commentary empty.
+RULES:
+- Always fill current_phase, next_phase_prediction, phase_confidence, phase_reason, market_commentary
+- market_commentary must be in Vietnamese and reflect CURRENT observable conditions
+- If numeric arrays unavailable, set them to [] but NEVER leave market_commentary or phase fields empty
 
-OUTPUT: Strict JSON only, no explanation outside JSON.
-
-{
-  "current_phase": "downtrend",
-  "next_phase_prediction": "recovery",
-  "phase_confidence": 65,
-  "phase_reason": "...",
-  "next_phase_reason": "...",
-  "market_commentary": {
-    "vn_index_trend": "MA10 đang có xu hướng gần lại MA50. Thanh khoản đang ở mức 20–25 nghìn tỷ/phiên, thấp hơn trung bình 3 tháng.",
-    "breadth_trend": "Số lượng mã tăng đang có xu hướng ít dần so với mã giảm trong 2 tuần gần nhất.",
-    "market_state": "Thị trường có vẻ đang ở trạng thái phân phối – index giữ nhưng breadth xấu dần.",
-    "interest_rate_trend": "Lãi suất huy động đang tăng nhẹ trong tháng gần nhất. Lãi suất liên ngân hàng ổn định quanh 4.5–5%."
-  },
-  "vn_index": [
-    {"date":"YYYY-MM-DD","open":1200.5,"close":1210.3,"volume":15000000000,"ma10":1205.0,"ma50":1190.0}
-  ],
-  "breadth": [
-    {"date":"YYYY-MM-DD","adv_pct":55.0,"dec_pct":35.0,"unch_pct":10.0}
-  ],
-  "panic_scores": [
-    {"date":"YYYY-MM-DD","panic_score":2,"label":"normal","reason":["breadth balanced"]}
-  ],
-  "interest_rates": [
-    {"date":"YYYY-MM-01","deposit_rate":4.5,"interbank_rate":3.8}
-  ]
-}
-
-Notes:
-- vn_index, breadth, panic_scores must cover the same trading dates, oldest first
-- volume is in VND (e.g. 15000000000 = 15 billion VND)
-- ma10 = 10-day simple moving average of closing prices; ma50 = 50-day SMA. Set to null if insufficient history.
-- interest_rates: exactly 6 monthly data points (oldest first). Use null for deposit_rate or interbank_rate if data is unavailable for that month; do NOT omit the entry.
-- market_commentary fields must be in Vietnamese and describe the CURRENT observable trend, not generic descriptions.`;
+JSON only – no text outside JSON:
+{"current_phase":"downtrend","next_phase_prediction":"recovery","phase_confidence":65,"phase_reason":"...","next_phase_reason":"...","market_commentary":{"vn_index_trend":"MA20 đang cắt xuống dưới MA50. Thanh khoản 2 tuần gần nhất thấp hơn trung bình 2 tháng ~15%.","breadth_trend":"Số mã giảm chiếm >60% phiên, advance/decline ratio <0.5 liên tục.","market_state":"Thị trường đang trong giai đoạn downtrend rõ ràng.","interest_rate_trend":"Lãi suất huy động ~5%, lãi suất liên ngân hàng ổn định 4–5%. P/E yield VNINDEX ~7% cao hơn lãi suất phi rủi ro."},"liquidity_summary":{"avg_volume_2w":15000000000,"avg_volume_2m":18000000000,"volume_ratio":0.83,"trend":"declining"},"vn_index":[{"date":"YYYY-MM-DD","open":0,"close":0,"volume":0,"ma10":null,"ma50":null}],"breadth":[{"date":"YYYY-MM-DD","adv_pct":0,"dec_pct":0,"unch_pct":0}],"panic_scores":[{"date":"YYYY-MM-DD","panic_score":0,"label":"normal","reason":[]}],"interest_rates":[{"date":"YYYY-MM-01","deposit_rate":null,"interbank_rate":null}]}`;
 
 // ──────────────────────────────────────────────────────────────
-//  Fetch ALL data from AI (phase + charts + rates)
+//  Fetch ALL data from AI
+//  - OpenAI: phase-only, no web_search_preview tool
+//    (removes ~8 000 tool-token overhead → stays under 10 000 TPM limit)
+//  - Gemini: comprehensive with googleSearch (all fields incl. charts)
 // ──────────────────────────────────────────────────────────────
 async function fetchAllFromAI(yearMonth) {
-  step('🤖', 'Fetching all VN Index data from AI (OpenAI + Gemini independently)…');
+  step('🤖', 'Fetching VN Index data from AI (OpenAI phase-only + Gemini full)…');
   const today = new Date().toISOString().split('T')[0];
-  const userContent = `Today's date: ${today}. Current month: ${yearMonth}. Provide the complete VN Index analysis package for this month.`;
 
-  // Call both providers independently so we can store separate analytical outputs.
   let openaiResult = null;
   let geminiResult = null;
 
+  // OpenAI – short phase-assessment call, NO web_search_preview tool
   if (OPENAI_KEY) {
     try {
-      const raw = await callOpenAI(AI_SYSTEM_PROMPT, userContent, 16000);
+      const userContent = `Today: ${today}. Month: ${yearMonth}. Assess current VN Index market phase based on the five mandatory criteria.`;
+      const raw = await callOpenAI(OPENAI_PHASE_PROMPT, userContent, 2000, false);
       openaiResult = extractJSON(raw);
-      if (openaiResult) ok('OpenAI data fetch succeeded');
+      if (openaiResult) ok('OpenAI phase fetch succeeded');
       else              warn('OpenAI returned non-JSON response');
     } catch (e) {
       warn(`OpenAI error: ${e.message}`);
     }
   }
 
+  // Gemini – comprehensive: phase + charts + liquidity summary + rates
   if (GEMINI_KEY) {
     try {
       await sleep(1000);
-      const prompt = `${AI_SYSTEM_PROMPT}\n\n${userContent}`;
-      const raw    = await callGemini(prompt, 16000);
+      const userContent = `Today: ${today}. Month: ${yearMonth}. Provide the complete VN Index analysis package.`;
+      const prompt = `${GEMINI_FULL_PROMPT}\n\n${userContent}`;
+      const raw    = await callGemini(prompt, 15000);
       geminiResult = extractJSON(raw);
       if (geminiResult) ok('Gemini data fetch succeeded');
       else              warn('Gemini returned non-JSON response');
@@ -209,8 +198,12 @@ async function fetchAllFromAI(yearMonth) {
     }
   }
 
-  // Resolved top-level values: prefer OpenAI, fall back to Gemini, then null defaults.
-  const resolved = openaiResult || geminiResult || {
+  if (!openaiResult && !geminiResult) {
+    warn('AI data fetch failed for both providers – all fields will be null/empty (shown as N/A in UI)');
+  }
+
+  // Resolved: prefer Gemini (live data via googleSearch), fall back to OpenAI, then defaults.
+  const resolved = geminiResult || openaiResult || {
     current_phase:         null,
     next_phase_prediction: null,
     phase_confidence:      null,
@@ -221,23 +214,29 @@ async function fetchAllFromAI(yearMonth) {
     breadth:               [],
     panic_scores:          [],
     interest_rates:        [],
+    liquidity_summary:     null,
   };
 
-  if (!openaiResult && !geminiResult) {
-    warn('AI data fetch failed for both providers – all fields will be null/empty (shown as N/A in UI)');
-  }
-
-  // Return per-provider results alongside the resolved value.
   return { openai: openaiResult, gemini: geminiResult, resolved };
 }
 
 // ──────────────────────────────────────────────────────────────
-//  OpenAI call  (Responses API – gpt-5.4-mini, with web search)
+//  OpenAI call  (Responses API – gpt-5.4-mini, optional web search)
 // ──────────────────────────────────────────────────────────────
-async function callOpenAI(systemPrompt, userContent, maxTokens = 16000) {
+// useWebSearch=false removes the web_search_preview tool, which adds ~8 000 tokens of
+// overhead to the input and triggers the 10 000 TPM limit on restricted plans.
+async function callOpenAI(systemPrompt, userContent, maxTokens = 16000, useWebSearch = true) {
   if (!OPENAI_KEY) return null;
   info('Calling OpenAI API (gpt-5.4-mini)…');
   const prompt = `${systemPrompt}\n\n${userContent}`;
+  const body = {
+    model:             'gpt-5.4-mini',
+    temperature:       0,
+    max_output_tokens: maxTokens,
+    input:             prompt,
+    store:             true,
+  };
+  if (useWebSearch) body.tools = [{ type: 'web_search_preview' }];
   let res;
   try {
     res = await fetch('https://api.openai.com/v1/responses', {
@@ -246,14 +245,7 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 16000) {
         'Content-Type':  'application/json',
         'Authorization': `Bearer ${OPENAI_KEY}`,
       },
-      body: JSON.stringify({
-        model:             'gpt-5.4-mini',
-        temperature:       0,
-        max_output_tokens: maxTokens,
-        input:             prompt,
-        store:             true,
-        tools:             [{ type: 'web_search_preview' }],
-      }),
+      body: JSON.stringify(body),
     });
   } catch (err) {
     throw new Error(`OpenAI fetch error: ${err.message}`);
@@ -425,26 +417,29 @@ async function upsertMonthIssue(yearMonth, body) {
   const geminiData = aiResult.gemini;
   const resolved   = aiResult.resolved;
 
-  // 2. Chart data: prefer OpenAI → Gemini → empty [] (shown as N/A in UI)
-  const vnIndex    = (Array.isArray(openaiData?.vn_index)    ? openaiData.vn_index    : null)
-                  || (Array.isArray(geminiData?.vn_index)    ? geminiData.vn_index    : null)
+  // 2. Chart data: prefer Gemini (live data) → OpenAI → empty []
+  const vnIndex    = (Array.isArray(geminiData?.vn_index)    ? geminiData.vn_index    : null)
+                  || (Array.isArray(openaiData?.vn_index)    ? openaiData.vn_index    : null)
                   || [];
-  const breadth    = (Array.isArray(openaiData?.breadth)     ? openaiData.breadth     : null)
-                  || (Array.isArray(geminiData?.breadth)     ? geminiData.breadth     : null)
+  const breadth    = (Array.isArray(geminiData?.breadth)     ? geminiData.breadth     : null)
+                  || (Array.isArray(openaiData?.breadth)     ? openaiData.breadth     : null)
                   || [];
-  const panicScores = (Array.isArray(openaiData?.panic_scores) ? openaiData.panic_scores : null)
-                   || (Array.isArray(geminiData?.panic_scores) ? geminiData.panic_scores : null)
+  const panicScores = (Array.isArray(geminiData?.panic_scores) ? geminiData.panic_scores : null)
+                   || (Array.isArray(openaiData?.panic_scores) ? openaiData.panic_scores : null)
                    || [];
 
-  // 3. Interest rates: prefer OpenAI → Gemini → date scaffold with nulls
-  const interestRates = (Array.isArray(openaiData?.interest_rates) && openaiData.interest_rates.length ? openaiData.interest_rates : null)
-                     || (Array.isArray(geminiData?.interest_rates) && geminiData.interest_rates.length ? geminiData.interest_rates : null)
+  // 3. Interest rates: prefer Gemini → OpenAI → date scaffold with nulls
+  const interestRates = (Array.isArray(geminiData?.interest_rates) && geminiData.interest_rates.length ? geminiData.interest_rates : null)
+                     || (Array.isArray(openaiData?.interest_rates) && openaiData.interest_rates.length ? openaiData.interest_rates : null)
                      || buildRateDateScaffold(6).map(date => ({ date, deposit_rate: null, interbank_rate: null }));
 
-  // 4. Market commentary: prefer OpenAI → Gemini → null
-  const marketCommentary = openaiData?.market_commentary || geminiData?.market_commentary || null;
+  // 4. Liquidity summary: from Gemini (OpenAI phase-only call does not return this)
+  const liquiditySummary = geminiData?.liquidity_summary || openaiData?.liquidity_summary || null;
 
-  // 5. Asset allocation mapping
+  // 5. Market commentary: prefer Gemini (live data) → OpenAI
+  const marketCommentary = geminiData?.market_commentary || openaiData?.market_commentary || null;
+
+  // 6. Asset allocation mapping
   const allocationMap = {
     sideway:      { equity: '30–40%', cash: '40–50%', gold: '10–20%', crypto: '0–10%',  strategy: 'Giữ tiền, chờ break' },
     uptrend:      { equity: '60–70%', cash: '20–30%', gold: '5–10%',  crypto: '5–15%',  strategy: 'Ride trend, giữ winner' },
@@ -455,7 +450,7 @@ async function upsertMonthIssue(yearMonth, body) {
   };
   const allocation = resolved.current_phase ? (allocationMap[resolved.current_phase] || allocationMap.sideway) : null;
 
-  // 5. Assemble payload.
+  // 7. Assemble payload.
   //    All data (phase, charts, rates) comes entirely from AI.
   //    provider_analysis stores the separate per-provider outputs for deeper inspection.
   step('📦', 'Assembling monthly payload…');
@@ -487,6 +482,7 @@ async function upsertMonthIssue(yearMonth, body) {
     next_phase_reason:     resolved.next_phase_reason || '',
     provider_analysis:     providerAnalysis,
     market_commentary:     marketCommentary,
+    liquidity_summary:     liquiditySummary,
     asset_allocation:      allocation || {},
     vn_index:              vnIndex,
     breadth:               breadth,
@@ -496,13 +492,16 @@ async function upsertMonthIssue(yearMonth, body) {
 
   ok(`Payload size: ${JSON.stringify(payload).length} bytes`);
   ok(`VN Index rows: ${vnIndex.length}  Breadth rows: ${breadth.length}  Panic rows: ${panicScores.length}`);
+  if (liquiditySummary) {
+    ok(`Liquidity: 2w avg=${(liquiditySummary.avg_volume_2w / 1e9).toFixed(1)}B  2m avg=${(liquiditySummary.avg_volume_2m / 1e9).toFixed(1)}B  ratio=${liquiditySummary.volume_ratio}  trend=${liquiditySummary.trend}`);
+  }
   if (resolved.current_phase) {
     ok(`Phase: ${payload.current_phase} → next: ${payload.next_phase_prediction} (${payload.phase_confidence}%)`);
   } else {
     warn('Phase: AI could not determine – payload phase fields are null (will show N/A in UI)');
   }
 
-  // 6. Write to the current month's GitHub Issue
+  // 8. Write to the current month's GitHub Issue
   step('📝', `Writing to GitHub Issue for ${yearMonth}…`);
   const issueBody = [
     `<!-- AUTO-GENERATED by update-vn-index.yml – do not edit manually. Month: ${yearMonth} -->`,
