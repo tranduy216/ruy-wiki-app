@@ -402,7 +402,7 @@ async function callGemini(prompt) {
         contents:         [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature:     0,
-          maxOutputTokens: 4096,
+          maxOutputTokens: 15000,
           thinkingConfig:  { thinkingBudget: 0 }
         }
       })
