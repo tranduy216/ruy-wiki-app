@@ -99,7 +99,12 @@ function buildRateDateScaffold(months = 6) {
 // ──────────────────────────────────────────────────────────────
 const AI_SYSTEM_PROMPT = `You are a quantitative analyst specializing in the Vietnamese stock market (VN Index).
 
-Based on your knowledge of recent VN market conditions and macroeconomic context, provide a complete analysis package for the requested month.
+IMPORTANT: Search the web to get REAL and CURRENT market data. Use sources such as:
+- HOSE/HNX official sites, VietstockFinance (vietstock.vn), CafeF (cafef.vn), TradingView VN30/VNINDEX
+- SBV (State Bank of Vietnam) for interest rate data
+- Any recent news or financial data portal covering the Vietnamese market
+
+Based on REAL data fetched from the web, provide a complete analysis package for the requested month.
 
 You must provide ALL of the following:
 1. Current market phase assessment
@@ -168,7 +173,7 @@ async function fetchAllFromAI(yearMonth) {
 
   if (OPENAI_KEY) {
     try {
-      const raw = await callOpenAI(AI_SYSTEM_PROMPT, userContent, 4000);
+      const raw = await callOpenAI(AI_SYSTEM_PROMPT, userContent, 16000);
       openaiResult = extractJSON(raw);
       if (openaiResult) ok('OpenAI data fetch succeeded');
       else              warn('OpenAI returned non-JSON response');
@@ -181,7 +186,7 @@ async function fetchAllFromAI(yearMonth) {
     try {
       await sleep(1000);
       const prompt = `${AI_SYSTEM_PROMPT}\n\n${userContent}`;
-      const raw    = await callGemini(prompt, 4000);
+      const raw    = await callGemini(prompt, 16000);
       geminiResult = extractJSON(raw);
       if (geminiResult) ok('Gemini data fetch succeeded');
       else              warn('Gemini returned non-JSON response');
@@ -212,9 +217,9 @@ async function fetchAllFromAI(yearMonth) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  OpenAI call  (Responses API – gpt-5.4-mini, matching pivot style)
+//  OpenAI call  (Responses API – gpt-5.4-mini, with web search)
 // ──────────────────────────────────────────────────────────────
-async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
+async function callOpenAI(systemPrompt, userContent, maxTokens = 16000) {
   if (!OPENAI_KEY) return null;
   info('Calling OpenAI API (gpt-5.4-mini)…');
   const prompt = `${systemPrompt}\n\n${userContent}`;
@@ -232,6 +237,7 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
         max_output_tokens: maxTokens,
         input:             prompt,
         store:             true,
+        tools:             [{ type: 'web_search_preview' }],
       }),
     });
   } catch (err) {
@@ -242,9 +248,16 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
     throw new Error(`OpenAI HTTP ${res.status}: ${txt.slice(0, 200)}`);
   }
   const data = await res.json();
-  const outputItem = data.output?.[0];
-  const text       = outputItem?.content?.[0]?.text || '';
-  const status     = data.status || 'unknown';
+  // When web_search_preview is used, output contains multiple items (web_search_call + message).
+  // Collect all text content from all message-type output items.
+  // Also handle legacy single-item responses (no web search active) by checking all item types.
+  let text = '';
+  for (const item of (data.output || [])) {
+    for (const c of (item.content || [])) {
+      if (c.text) text += c.text;
+    }
+  }
+  const status = data.status || 'unknown';
   info(`OpenAI response length: ${text.length} chars, status: ${status}`);
   if (status === 'incomplete') {
     throw new Error('OpenAI response was truncated (status=incomplete)');
@@ -253,9 +266,9 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Gemini call  (gemini-2.5-flash, matching pivot style)
+//  Gemini call  (gemini-2.5-flash, with Google Search grounding)
 // ──────────────────────────────────────────────────────────────
-async function callGemini(prompt, maxTokens = 2500) {
+async function callGemini(prompt, maxTokens = 16000) {
   if (!GEMINI_KEY) return null;
   info('Calling Gemini API (gemini-2.5-flash)…');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
@@ -266,10 +279,13 @@ async function callGemini(prompt, maxTokens = 2500) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+        // Note: thinkingConfig is omitted here because thinkingBudget:0 (disabling thinking)
+        // is incompatible with googleSearch grounding – the model needs some reasoning budget
+        // to process search results. Omitting it lets the API use its default.
         generationConfig: {
           temperature:      0,
           maxOutputTokens:  maxTokens,
-          thinkingConfig:   { thinkingBudget: 0 },
         },
       }),
     });
@@ -282,23 +298,36 @@ async function callGemini(prompt, maxTokens = 2500) {
   }
   const data        = await res.json();
   const candidate   = data.candidates?.[0];
-  const text        = candidate?.content?.parts?.[0]?.text?.trim() || '';
+  // Grounding may add multiple text parts – join them all.
+  const text        = (candidate?.content?.parts || [])
+    .map(p => p.text || '').join('').trim();
   const finishReason = candidate?.finishReason || 'unknown';
   info(`Gemini response length: ${text.length} chars, finishReason: ${finishReason}`);
   if (finishReason === 'MAX_TOKENS') {
-    throw new Error('Gemini response was truncated (finishReason=MAX_TOKENS)');
+    // Don't throw – try to parse whatever was returned before truncation.
+    warn('Gemini response was truncated (finishReason=MAX_TOKENS) – attempting partial parse');
   }
   return text || null;
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Extract JSON from AI response (handles markdown code blocks)
+//  Extract JSON from AI response (handles markdown code blocks
+//  and surrounding citation/grounding text from Google Search)
 // ──────────────────────────────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
+  // 1. Try markdown code block (```json ... ```)
   const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const raw   = match ? match[1].trim() : text.trim();
-  try { return JSON.parse(raw); } catch { return null; }
+  if (match) {
+    try { return JSON.parse(match[1].trim()); } catch {}
+  }
+  // 2. Find the outermost JSON object by scanning for first '{' and last '}'
+  const start = text.indexOf('{');
+  const end   = text.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch {}
+  }
+  return null;
 }
 
 // ──────────────────────────────────────────────────────────────
