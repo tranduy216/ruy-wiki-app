@@ -708,6 +708,64 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     /* Criteria table */
     .vn-criteria-table { min-width: 750px; }
     .vn-criteria-table td { font-size: .82rem; }
+    /* Hero stat grid */
+    .vn-stat-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: .85rem; margin-bottom: 0;
+    }
+    @media (max-width: 700px) {
+      .vn-stat-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .vn-stat-card {
+      background: var(--surface2); border: 1px solid var(--border); padding: .9rem 1rem;
+    }
+    .vn-stat-label {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted); margin-bottom: .2rem;
+    }
+    .vn-stat-value { font-size: .95rem; font-weight: 700; color: var(--text); }
+    .vn-summary-line {
+      font-size: .84rem; color: var(--muted); font-style: italic;
+      margin-top: .9rem; padding-top: .85rem; border-top: 1px solid var(--border);
+      line-height: 1.65;
+    }
+    /* AI insight cards */
+    .vn-ai-cards { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .vn-ai-card {
+      flex: 1; min-width: 240px;
+      background: var(--surface2); border: 1px solid var(--border); padding: .9rem 1.1rem;
+    }
+    .vn-ai-card-header {
+      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+      margin-bottom: .65rem; padding-bottom: .5rem; border-bottom: 1px solid var(--border);
+    }
+    .vn-ai-provider {
+      font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+    }
+    .vn-ai-meta { font-size: .78rem; color: var(--muted); }
+    .vn-ai-summary {
+      font-size: .84rem; color: var(--text); font-style: italic;
+      margin-bottom: .55rem; line-height: 1.65;
+    }
+    .vn-ai-bullets {
+      margin: 0; padding: 0 0 0 1.1rem;
+      font-size: .8rem; color: var(--muted); line-height: 1.75;
+    }
+    /* Collapsible reference */
+    .vn-details {
+      margin-bottom: .75rem; border: 1px solid var(--border); background: var(--surface2);
+    }
+    .vn-details > summary {
+      cursor: pointer; padding: .65rem 1rem;
+      font-size: .84rem; font-weight: 700; color: var(--text);
+      list-style: none; user-select: none;
+      display: flex; align-items: center; gap: .45rem;
+    }
+    .vn-details > summary::-webkit-details-marker { display: none; }
+    .vn-details > summary::before {
+      content: '▶'; font-size: .65rem; transition: transform .2s; color: var(--muted);
+    }
+    .vn-details[open] > summary::before { transform: rotate(90deg); }
+    .vn-details-body { padding: 0 1rem .9rem; }
   </style>
   <!-- Chart.js (loaded before page scripts) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
