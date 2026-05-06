@@ -127,7 +127,7 @@ jobs:
           echo "  3. Issues are disabled on this repository"
           echo "     → Settings › General → Features → enable Issues"
           echo ""
-          echo "  4. TCBS API or AI API temporarily unavailable"
+          echo "  4. AI API temporarily unavailable"
           echo "     → Re-run the workflow manually after a few minutes"
           echo ""
           echo "  Full logs are above this step."

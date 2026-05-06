@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // ================================================================
 //  update-vn-index.js
-//  Fetches VN Index data from TCBS public API, calls OpenAI / Gemini
-//  for phase determination + panic scoring, and updates one GitHub
-//  Issue per calendar month (label: vn-index-phase-data).
+//  Calls OpenAI / Gemini for VN Index phase determination and
+//  updates one GitHub Issue per calendar month (label: vn-index-phase-data).
 //
 //  Schedule: daily Mon-Fri at 13:00 UTC (20:00 ICT) after VN market.
 //
@@ -81,171 +80,135 @@ function currentYearMonth() {
   return ict.toISOString().slice(0, 7);        // e.g. "2025-01"
 }
 
-// First and last date of a "YYYY-MM" month as ISO strings
-function monthRange(yearMonth) {
-  const [y, m] = yearMonth.split('-').map(Number);
-  const start  = new Date(Date.UTC(y, m - 1, 1)).toISOString().split('T')[0];
-  const end    = new Date(Date.UTC(y, m, 0)).toISOString().split('T')[0];
-  return { start, end };
-}
-
 // ──────────────────────────────────────────────────────────────
-//  TCBS API – VN Index historical prices
+//  Reference interest rate date scaffold
 // ──────────────────────────────────────────────────────────────
-async function fetchVnIndexHistory(days = 190) {
-  const size = Math.min(days, 500);
-  const url  = `https://apipubaws.tcbs.com.vn/stock-insight/v1/index/vnindex/historical-price?page=0&size=${size}&type=index`;
-  info(`Fetching VN Index from TCBS (size=${size})…`);
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RuyWiki/1.0)' }
-  });
-  if (!res.ok) throw new Error(`TCBS VN Index HTTP ${res.status}`);
-  const json = await res.json();
-  // TCBS returns { data: [...] } where each item has:
-  // tradingDate (ms timestamp), openPrice, highPrice, lowPrice, closePrice, totalVolume, totalValue
-  const raw = json.data || json.items || [];
-  if (!raw.length) throw new Error('TCBS returned empty VN Index data');
-
-  const sorted = raw
-    .map(r => {
-      const d = r.tradingDate
-        ? new Date(r.tradingDate).toISOString().split('T')[0]
-        : (r.date || '');
-      return {
-        date:   d,
-        open:   parseFloat(r.openPrice  || r.open  || 0),
-        high:   parseFloat(r.highPrice  || r.high  || 0),
-        low:    parseFloat(r.lowPrice   || r.low   || 0),
-        close:  parseFloat(r.closePrice || r.close || 0),
-        volume: parseFloat(r.totalValue || r.value || r.totalVolume || 0),
-      };
-    })
-    .filter(r => r.date && r.close > 0)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  ok(`TCBS: ${sorted.length} trading days fetched`);
-  return sorted;
-}
-
-// ──────────────────────────────────────────────────────────────
-//  Moving averages
-// ──────────────────────────────────────────────────────────────
-function calcMA(prices, n) {
-  return prices.map((_, i) => {
-    if (i < n - 1) return null;
-    const slice = prices.slice(i - n + 1, i + 1);
-    return +(slice.reduce((s, v) => s + v, 0) / n).toFixed(2);
-  });
-}
-
-// ──────────────────────────────────────────────────────────────
-//  Enrich VN Index data with MA10 / MA50
-// ──────────────────────────────────────────────────────────────
-function enrichWithMA(rows) {
-  const closes = rows.map(r => r.close);
-  const ma10   = calcMA(closes, 10);
-  const ma50   = calcMA(closes, 50);
-  return rows.map((r, i) => ({ ...r, ma10: ma10[i], ma50: ma50[i] }));
-}
-
-// ──────────────────────────────────────────────────────────────
-//  Simulated breadth data derived from index returns.
-//  NOTE: This is an approximation – real advance/decline data
-//  would require scanning all listed stocks daily.  The AI prompt
-//  for phase determination uses these estimates; treat them as a
-//  directional signal, not precise market-breadth figures.
-// ──────────────────────────────────────────────────────────────
-function estimateBreadth(rows) {
-  // Correlate daily index return to estimated breadth:
-  // Strong up day → high advance ratio, strong down day → high decline ratio
-  return rows.map(r => {
-    const pct = r.open > 0 ? ((r.close - r.open) / r.open) * 100 : 0;
-    let adv, dec;
-    if (pct >= 2)      { adv = 65 + Math.random() * 10;  dec = 20 + Math.random() * 8; }
-    else if (pct >= 0.5) { adv = 50 + Math.random() * 10; dec = 30 + Math.random() * 8; }
-    else if (pct >= -0.5) { adv = 40 + Math.random() * 10; dec = 40 + Math.random() * 8; }
-    else if (pct >= -2) { adv = 25 + Math.random() * 10; dec = 55 + Math.random() * 8; }
-    else               { adv = 10 + Math.random() * 10;  dec = 70 + Math.random() * 10; }
-    const unch = Math.max(0, 100 - adv - dec);
-    return {
-      date:    r.date,
-      adv_pct: +adv.toFixed(1),
-      dec_pct: +dec.toFixed(1),
-      unch_pct: +unch.toFixed(1),
-    };
-  });
-}
-
-// ──────────────────────────────────────────────────────────────
-//  Reference interest rate data (VN SBV policy + interbank)
-//  We use a static approximation; real data would need VN SBV API
-// ──────────────────────────────────────────────────────────────
-function buildInterestRates(months = 6) {
-  // Known VN deposit and interbank rates (approximate, 2024-2025)
-  // These would be updated by the AI prompt below
-  const today    = new Date();
-  const rates    = [];
+function buildRateDateScaffold(months = 6) {
+  const today = new Date();
+  const dates = [];
   for (let i = months - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setMonth(d.getMonth() - i);
-    rates.push({
-      date:           d.toISOString().split('T')[0].slice(0, 7) + '-01',
-      deposit_rate:   null,
-      interbank_rate: null,
-    });
+    dates.push(d.toISOString().split('T')[0].slice(0, 7) + '-01');
   }
-  return rates;
+  return dates;
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Compact summary for AI prompt
+//  Comprehensive AI prompt – all data in one shot
 // ──────────────────────────────────────────────────────────────
-function buildAiInput(enriched, breadth) {
-  const last = enriched.slice(-90);   // last 90 trading days
-  const summary = last.map(r => ({
-    date:   r.date,
-    close:  r.close,
-    open:   r.open,
-    change_pct: r.open > 0 ? +((r.close - r.open) / r.open * 100).toFixed(2) : 0,
-    vol_norm: null,            // placeholder (AI won't need actual volume number for phase)
-    ma10:  r.ma10,
-    ma50:  r.ma50,
-    adv_pct: breadth.find(b => b.date === r.date)?.adv_pct ?? null,
-    dec_pct: breadth.find(b => b.date === r.date)?.dec_pct ?? null,
-  }));
-  return summary;
+const AI_SYSTEM_PROMPT = `You are a quantitative analyst specializing in the Vietnamese stock market (VN Index).
+
+Based on your knowledge of recent VN market conditions and macroeconomic context, provide a complete analysis package for the requested month.
+
+You must provide ALL of the following:
+1. Current market phase assessment
+2. Recent daily VN Index OHLCV + MA data (last ~20 trading days of the current month, oldest→newest)
+3. Market breadth estimates (advance/decline %) for those same trading days
+4. Panic score for each trading day
+5. Vietnam interest rate data (last 6 months, oldest→newest)
+
+Phases: sideway | uptrend | distribution | downtrend | panic | recovery
+
+Phase rules:
+- sideway: Price ranging, MA20 ≈ MA50, balanced advance/decline, low volume
+- uptrend: Higher highs, MA20 > MA50, adv > dec, breadth strong
+- distribution: Index still up or flat, but breadth weakening (dec > adv despite index), volume declining
+- downtrend: Lower highs, MA20 < MA50, persistent dec > adv
+- panic: Sharp drop, volume spike (1.5-2x normal), dec/adv > 3-4, widespread limit-down
+- recovery: Strong bounce after panic, breadth improving, dip-buying visible
+
+Panic score rules (1–10, sum of components):
+- Index change <= -4% → +3, <= -3% → +2, <= -2% → +1
+- Volume > 2× 20d avg → +2, > 1.5× → +1
+- dec/adv ratio > 4 → +3, > 3 → +2, > 2 → +1
+- Label: "panic" (score≥7), "high_stress" (score≥5), "normal" (score<5)
+
+If you cannot provide a specific field with sufficient confidence, set it to null (for scalars) or [] (for arrays).
+
+OUTPUT: Strict JSON only, no explanation outside JSON.
+
+{
+  "current_phase": "downtrend",
+  "next_phase_prediction": "recovery",
+  "phase_confidence": 65,
+  "phase_reason": "...",
+  "next_phase_reason": "...",
+  "vn_index": [
+    {"date":"YYYY-MM-DD","open":1200.5,"close":1210.3,"volume":15000000000,"ma10":1205.0,"ma50":1190.0}
+  ],
+  "breadth": [
+    {"date":"YYYY-MM-DD","adv_pct":55.0,"dec_pct":35.0,"unch_pct":10.0}
+  ],
+  "panic_scores": [
+    {"date":"YYYY-MM-DD","panic_score":2,"label":"normal","reason":["breadth balanced"]}
+  ],
+  "interest_rates": [
+    {"date":"YYYY-MM-01","deposit_rate":4.5,"interbank_rate":3.8}
+  ]
 }
 
-// ──────────────────────────────────────────────────────────────
-//  Build volume-normalised list for panic-score prompt
-// ──────────────────────────────────────────────────────────────
-function buildPanicInput(enriched, breadth) {
-  if (!enriched.length) return [];
+Notes:
+- vn_index, breadth, panic_scores must cover the same trading dates, oldest first
+- volume is in VND (e.g. 15000000000 = 15 billion VND)
+- ma10 = 10-day simple moving average of closing prices; ma50 = 50-day SMA. Set to null if insufficient history.
+- interest_rates: exactly 6 monthly data points (oldest first). Use null for deposit_rate or interbank_rate if data is unavailable for that month; do NOT omit the entry.`;
 
-  // Compute 20-day rolling average volume
-  const volumes  = enriched.map(r => r.volume);
-  const last90   = enriched.slice(-90);
-  const vol20avg = enriched.map((_, i) => {
-    if (i < 19) return null;
-    const sl = volumes.slice(i - 19, i + 1);
-    return sl.reduce((s, v) => s + v, 0) / 20;
-  });
+// ──────────────────────────────────────────────────────────────
+//  Fetch ALL data from AI (phase + charts + rates)
+// ──────────────────────────────────────────────────────────────
+async function fetchAllFromAI(yearMonth) {
+  step('🤖', 'Fetching all VN Index data from AI (OpenAI + Gemini independently)…');
+  const today = new Date().toISOString().split('T')[0];
+  const userContent = `Today's date: ${today}. Current month: ${yearMonth}. Provide the complete VN Index analysis package for this month.`;
 
-  return last90.map(r => {
-    const idx  = enriched.indexOf(r);
-    const avg  = vol20avg[idx];
-    const volRatio = avg ? +(r.volume / avg).toFixed(2) : 1;
-    const br = breadth.find(b => b.date === r.date);
-    const decAdvRatio = br && br.adv_pct > 0 ? +(br.dec_pct / br.adv_pct).toFixed(2) : null;
-    return {
-      date:             r.date,
-      change_pct:       r.open > 0 ? +((r.close - r.open) / r.open * 100).toFixed(2) : 0,
-      volume_vs_20d:    volRatio,
-      dec_adv_ratio:    decAdvRatio,
-      floor_stocks_est: null,   // not available; AI will use heuristic
-      large_cap_down:   null,
-    };
-  });
+  // Call both providers independently so we can store separate analytical outputs.
+  let openaiResult = null;
+  let geminiResult = null;
+
+  if (OPENAI_KEY) {
+    try {
+      const raw = await callOpenAI(AI_SYSTEM_PROMPT, userContent, 4000);
+      openaiResult = extractJSON(raw);
+      if (openaiResult) ok('OpenAI data fetch succeeded');
+      else              warn('OpenAI returned non-JSON response');
+    } catch (e) {
+      warn(`OpenAI error: ${e.message}`);
+    }
+  }
+
+  if (GEMINI_KEY) {
+    try {
+      await sleep(1000);
+      const prompt = `${AI_SYSTEM_PROMPT}\n\n${userContent}`;
+      const raw    = await callGemini(prompt, 4000);
+      geminiResult = extractJSON(raw);
+      if (geminiResult) ok('Gemini data fetch succeeded');
+      else              warn('Gemini returned non-JSON response');
+    } catch (e) {
+      warn(`Gemini error: ${e.message}`);
+    }
+  }
+
+  // Resolved top-level values: prefer OpenAI, fall back to Gemini, then null defaults.
+  const resolved = openaiResult || geminiResult || {
+    current_phase:         null,
+    next_phase_prediction: null,
+    phase_confidence:      null,
+    phase_reason:          null,
+    next_phase_reason:     null,
+    vn_index:              [],
+    breadth:               [],
+    panic_scores:          [],
+    interest_rates:        [],
+  };
+
+  if (!openaiResult && !geminiResult) {
+    warn('AI data fetch failed for both providers – all fields will be null/empty (shown as N/A in UI)');
+  }
+
+  // Return per-provider results alongside the resolved value.
+  return { openai: openaiResult, gemini: geminiResult, resolved };
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -339,210 +302,6 @@ function extractJSON(text) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Phase determination via AI
-// ──────────────────────────────────────────────────────────────
-const PHASE_SYSTEM_PROMPT = `You are a quantitative analyst specializing in the Vietnamese stock market (VN Index).
-
-Analyze the provided daily VN Index data and determine the current market phase.
-
-Phases: sideway | uptrend | distribution | downtrend | panic | recovery
-
-Phase rules:
-- sideway: Price ranging, MA20 ≈ MA50, balanced advance/decline, low volume
-- uptrend: Higher highs, MA20 > MA50, adv > dec, breadth strong
-- distribution: Index still up or flat, but breadth weakening (dec > adv despite index), volume declining
-- downtrend: Lower highs, MA20 < MA50, persistent dec > adv
-- panic: Sharp drop, volume spike (1.5-2x normal), dec/adv > 3-4, widespread limit-down
-- recovery: Strong bounce after panic, breadth improving, dip-buying visible
-
-Also predict the NEXT likely phase.
-
-OUTPUT: Strict JSON only, no explanation outside JSON.
-
-{
-  "current_phase": "distribution",
-  "next_phase_prediction": "downtrend",
-  "phase_confidence": 72,
-  "phase_reason": "...",
-  "next_phase_reason": "...",
-  "deposit_rates": [{"date":"YYYY-MM-01","rate":4.5}, ...],
-  "interbank_rates": [{"date":"YYYY-MM-01","rate":3.8}, ...]
-}
-
-For deposit_rates and interbank_rates: provide 6 monthly data points (last 6 months) using your knowledge of Vietnam interest rates.`;
-
-async function determinePhase(aiInput) {
-  step('🤖', 'Determining VN Index Phase via AI (OpenAI + Gemini independently)…');
-  const userContent = `VN Index data (last 90 trading days):\n${JSON.stringify(aiInput, null, 2)}`;
-
-  // Call both providers independently so we can store separate analytical outputs.
-  let openaiResult = null;
-  let geminiResult = null;
-
-  if (OPENAI_KEY) {
-    try {
-      const raw = await callOpenAI(PHASE_SYSTEM_PROMPT, userContent, 800);
-      openaiResult = extractJSON(raw);
-      if (openaiResult) ok('OpenAI phase determination succeeded');
-      else              warn('OpenAI returned non-JSON phase response');
-    } catch (e) {
-      warn(`OpenAI phase error: ${e.message}`);
-    }
-  }
-
-  if (GEMINI_KEY) {
-    try {
-      await sleep(1000);
-      const prompt = `${PHASE_SYSTEM_PROMPT}\n\n${userContent}`;
-      const raw    = await callGemini(prompt, 800);
-      geminiResult = extractJSON(raw);
-      if (geminiResult) ok('Gemini phase determination succeeded');
-      else              warn('Gemini returned non-JSON phase response');
-    } catch (e) {
-      warn(`Gemini phase error: ${e.message}`);
-    }
-  }
-
-  // Resolved top-level values: prefer OpenAI, fall back to Gemini, then hardcoded default.
-  const resolved = openaiResult || geminiResult || {
-    current_phase:         'sideway',
-    next_phase_prediction: 'uptrend',
-    phase_confidence:      50,
-    phase_reason:          'AI analysis unavailable – using default phase.',
-    next_phase_reason:     '',
-    deposit_rates:         [],
-    interbank_rates:       [],
-  };
-
-  if (!openaiResult && !geminiResult) {
-    warn('AI phase determination failed for both providers – using hardcoded fallback (sideway)');
-  }
-
-  // Return per-provider results alongside the resolved value.
-  return { openai: openaiResult, gemini: geminiResult, resolved };
-}
-
-// ──────────────────────────────────────────────────────────────
-//  Panic score calculation via AI
-// ──────────────────────────────────────────────────────────────
-const PANIC_SYSTEM_PROMPT = `You are a quantitative trading assistant.
-
-Your task is to calculate a Panic Score (1 to 10) for each trading day.
-
-## Scoring rules:
-
-1. Index change (%):
-- <= -4% → +3
-- <= -3% → +2
-- <= -2% → +1
-
-2. Volume spike (vs 20-day average):
-- > 2x → +2
-- > 1.5x → +1
-
-3. Breadth (Decliners / Advancers):
-- > 4 → +3
-- > 3 → +2
-- > 2 → +1
-
-4. Floor stocks (estimated from dec_adv_ratio and change_pct):
-- dec_adv_ratio > 4 AND change < -3% → assume >50 floor stocks → +2
-- dec_adv_ratio > 3 → assume >20 floor stocks → +1
-
-5. Large-cap breakdown (estimate from index change):
-- change < -2% → assume some major stocks down → +1
-- change < -3% → assume most major stocks down → +2
-
-Final score: Sum all components, normalize to range 1–10.
-
-## Output format (STRICT JSON array ONLY, no explanation):
-
-[
-  {
-    "date": "YYYY-MM-DD",
-    "panic_score": 3,
-    "label": "normal",
-    "reason": ["volume spike", "breadth weak"]
-  }
-]
-
-Label: "panic" (score>=7), "high_stress" (score>=5), "normal" (score<5).`;
-
-async function calcPanicScores(panicInput) {
-  step('🔥', 'Calculating Panic Scores via AI…');
-
-  // Split into chunks of 30 to stay within token limits
-  const CHUNK = 30;
-  const chunks = [];
-  for (let i = 0; i < panicInput.length; i += CHUNK) {
-    chunks.push(panicInput.slice(i, i + CHUNK));
-  }
-
-  let allScores = [];
-
-  for (let ci = 0; ci < chunks.length; ci++) {
-    const chunk = chunks[ci];
-    const userContent = `Input data:\n${JSON.stringify(chunk, null, 2)}`;
-    let result = null;
-
-    if (OPENAI_KEY) {
-      try {
-        const raw = await callOpenAI(PANIC_SYSTEM_PROMPT, userContent, 1500);
-        result = extractJSON(raw);
-        if (Array.isArray(result)) ok(`OpenAI panic chunk ${ci + 1}/${chunks.length}: ${result.length} scores`);
-        else result = null;
-      } catch (e) {
-        warn(`OpenAI panic chunk ${ci + 1} error: ${e.message}`);
-      }
-    }
-
-    if (!result && GEMINI_KEY) {
-      try {
-        await sleep(800);
-        const prompt = `${PANIC_SYSTEM_PROMPT}\n\n${userContent}`;
-        const raw    = await callGemini(prompt, 1500);
-        result = extractJSON(raw);
-        if (Array.isArray(result)) ok(`Gemini panic chunk ${ci + 1}/${chunks.length}: ${result.length} scores`);
-        else result = null;
-      } catch (e) {
-        warn(`Gemini panic chunk ${ci + 1} error: ${e.message}`);
-      }
-    }
-
-    if (!result) {
-      warn(`Panic chunk ${ci + 1}: AI failed – using rule-based fallback`);
-      result = chunk.map(r => ({
-        date:        r.date,
-        panic_score: ruleBasedPanic(r),
-        label:       'normal',
-        reason:      ['rule-based fallback'],
-      }));
-    }
-
-    allScores = allScores.concat(result);
-    if (ci < chunks.length - 1) await sleep(500);
-  }
-
-  return allScores;
-}
-
-function ruleBasedPanic(r) {
-  let score = 0;
-  const chg = r.change_pct || 0;
-  if (chg <= -4)       score += 3;
-  else if (chg <= -3)  score += 2;
-  else if (chg <= -2)  score += 1;
-  const vol = r.volume_vs_20d || 1;
-  if (vol > 2)         score += 2;
-  else if (vol > 1.5)  score += 1;
-  const dar = r.dec_adv_ratio || 1;
-  if (dar > 4)         score += 3;
-  else if (dar > 3)    score += 2;
-  else if (dar > 2)    score += 1;
-  return Math.min(10, Math.max(1, score));
-}
-
-// ──────────────────────────────────────────────────────────────
 //  GitHub helpers
 // ──────────────────────────────────────────────────────────────
 async function ghFetch(path, opts = {}) {
@@ -614,71 +373,31 @@ async function upsertMonthIssue(yearMonth, body) {
   banner('VN Index Phase – Daily Data Update');
 
   const yearMonth = currentYearMonth();
-  const { start: monthStart } = monthRange(yearMonth);
-  ok(`Month: ${yearMonth}  (from ${monthStart})`);
+  ok(`Month: ${yearMonth}`);
 
-  // 1. Fetch raw VN Index data.
-  //    We fetch 190 days to have enough history for MA50,
-  //    but only persist the current month's data in the issue.
-  step('📥', 'Fetching VN Index from TCBS…');
-  const rawRows  = await fetchVnIndexHistory(190);
+  // 1. Fetch ALL data from AI (both providers run independently)
+  const aiResult   = await fetchAllFromAI(yearMonth);
+  const openaiData = aiResult.openai;
+  const geminiData = aiResult.gemini;
+  const resolved   = aiResult.resolved;
 
-  // 2. Enrich with MA10 / MA50 (using full history for accuracy)
-  step('📐', 'Calculating MA10 & MA50…');
-  const enriched = enrichWithMA(rawRows);
-  ok(`Enriched ${enriched.length} rows`);
+  // 2. Chart data: prefer OpenAI → Gemini → empty [] (shown as N/A in UI)
+  const vnIndex    = (Array.isArray(openaiData?.vn_index)    ? openaiData.vn_index    : null)
+                  || (Array.isArray(geminiData?.vn_index)    ? geminiData.vn_index    : null)
+                  || [];
+  const breadth    = (Array.isArray(openaiData?.breadth)     ? openaiData.breadth     : null)
+                  || (Array.isArray(geminiData?.breadth)     ? geminiData.breadth     : null)
+                  || [];
+  const panicScores = (Array.isArray(openaiData?.panic_scores) ? openaiData.panic_scores : null)
+                   || (Array.isArray(geminiData?.panic_scores) ? geminiData.panic_scores : null)
+                   || [];
 
-  // 3. Estimate breadth for all rows
-  step('📊', 'Estimating market breadth…');
-  const breadth  = estimateBreadth(enriched);
+  // 3. Interest rates: prefer OpenAI → Gemini → date scaffold with nulls
+  const interestRates = (Array.isArray(openaiData?.interest_rates) && openaiData.interest_rates.length ? openaiData.interest_rates : null)
+                     || (Array.isArray(geminiData?.interest_rates) && geminiData.interest_rates.length ? geminiData.interest_rates : null)
+                     || buildRateDateScaffold(6).map(date => ({ date, deposit_rate: null, interbank_rate: null }));
 
-  // 4. Prepare AI inputs (last 90 trading days for context)
-  const aiInput    = buildAiInput(enriched, breadth);
-  const panicInput = buildPanicInput(enriched, breadth);
-
-  // 5. AI: phase determination (both OpenAI and Gemini run independently)
-  await sleep(500);
-  const phaseResult  = await determinePhase(aiInput);
-  const openaiPhase  = phaseResult.openai;
-  const geminiPhase  = phaseResult.gemini;
-  const resolved     = phaseResult.resolved;
-
-  // 6. AI: panic scores (chart/numeric – OpenAI → Gemini → rule-based API fallback)
-  await sleep(500);
-  const panicScores = await calcPanicScores(panicInput);
-
-  // 7. Build interest rate data.
-  //    Priority: OpenAI rates → Gemini rates → empty (null values from buildInterestRates).
-  //    Raw API/computed rates serve as the deterministic fallback via buildInterestRates().
-  const depositRates   = openaiPhase?.deposit_rates   || geminiPhase?.deposit_rates   || resolved.deposit_rates   || [];
-  const interbankRates = openaiPhase?.interbank_rates  || geminiPhase?.interbank_rates  || resolved.interbank_rates  || [];
-  const interestRates  = buildInterestRates(6).map((r, i) => ({
-    date:           r.date,
-    deposit_rate:   depositRates[i]?.rate   ?? null,
-    interbank_rate: interbankRates[i]?.rate ?? null,
-  }));
-
-  // 8. Filter to CURRENT MONTH only for issue storage.
-  //    This keeps each issue small (≈ 20 trading days).
-  const monthRows    = enriched.filter(r => r.date >= monthStart);
-  const monthBreadth = breadth.filter(r => r.date >= monthStart);
-
-  // Align panic scores to month rows (panic scores cover the last 90 days window)
-  const monthPanic = monthRows.map(r => {
-    const ps = panicScores.find(p => p.date === r.date);
-    return ps || { date: r.date, panic_score: 1, label: 'normal', reason: [] };
-  });
-
-  const chartVnIndex = monthRows.map(r => ({
-    date:   r.date,
-    open:   r.open,
-    close:  r.close,
-    volume: r.volume,
-    ma10:   r.ma10,
-    ma50:   r.ma50,
-  }));
-
-  // 9. Asset allocation mapping
+  // 4. Asset allocation mapping
   const allocationMap = {
     sideway:      { equity: '30–40%', cash: '40–50%', gold: '10–20%', crypto: '0–10%',  strategy: 'Giữ tiền, chờ break' },
     uptrend:      { equity: '60–70%', cash: '20–30%', gold: '5–10%',  crypto: '5–15%',  strategy: 'Ride trend, giữ winner' },
@@ -687,27 +406,27 @@ async function upsertMonthIssue(yearMonth, body) {
     panic:        { equity: '40–60%', cash: '20–30%', gold: '10–20%', crypto: '0–10%',  strategy: 'Bắt đầu mua (scale-in)' },
     recovery:     { equity: '60–80%', cash: '10–20%', gold: '5–10%',  crypto: '5–15%',  strategy: 'Add position, tăng risk' },
   };
-  const allocation = allocationMap[resolved.current_phase] || allocationMap.sideway;
+  const allocation = resolved.current_phase ? (allocationMap[resolved.current_phase] || allocationMap.sideway) : null;
 
-  // 10. Assemble payload (month-scoped data only).
-  //     Top-level phase fields use the resolved (OpenAI-preferred) value for UI backward-compat.
-  //     provider_analysis stores the separate per-provider outputs for deeper inspection.
+  // 5. Assemble payload.
+  //    All data (phase, charts, rates) comes entirely from AI.
+  //    provider_analysis stores the separate per-provider outputs for deeper inspection.
   step('📦', 'Assembling monthly payload…');
 
   const providerAnalysis = {
-    openai: openaiPhase ? {
-      current_phase:         openaiPhase.current_phase,
-      next_phase_prediction: openaiPhase.next_phase_prediction,
-      phase_confidence:      openaiPhase.phase_confidence,
-      phase_reason:          openaiPhase.phase_reason,
-      next_phase_reason:     openaiPhase.next_phase_reason || '',
+    openai: openaiData ? {
+      current_phase:         openaiData.current_phase,
+      next_phase_prediction: openaiData.next_phase_prediction,
+      phase_confidence:      openaiData.phase_confidence,
+      phase_reason:          openaiData.phase_reason,
+      next_phase_reason:     openaiData.next_phase_reason || '',
     } : null,
-    gemini: geminiPhase ? {
-      current_phase:         geminiPhase.current_phase,
-      next_phase_prediction: geminiPhase.next_phase_prediction,
-      phase_confidence:      geminiPhase.phase_confidence,
-      phase_reason:          geminiPhase.phase_reason,
-      next_phase_reason:     geminiPhase.next_phase_reason || '',
+    gemini: geminiData ? {
+      current_phase:         geminiData.current_phase,
+      next_phase_prediction: geminiData.next_phase_prediction,
+      phase_confidence:      geminiData.phase_confidence,
+      phase_reason:          geminiData.phase_reason,
+      next_phase_reason:     geminiData.next_phase_reason || '',
     } : null,
   };
 
@@ -720,18 +439,22 @@ async function upsertMonthIssue(yearMonth, body) {
     phase_reason:          resolved.phase_reason,
     next_phase_reason:     resolved.next_phase_reason || '',
     provider_analysis:     providerAnalysis,
-    asset_allocation:      allocation,
-    vn_index:              chartVnIndex,
-    breadth:               monthBreadth,
-    panic_scores:          monthPanic,
-    interest_rates:        interestRates,  // 6 monthly points, same in every issue
+    asset_allocation:      allocation || {},
+    vn_index:              vnIndex,
+    breadth:               breadth,
+    panic_scores:          panicScores,
+    interest_rates:        interestRates,
   };
 
   ok(`Payload size: ${JSON.stringify(payload).length} bytes`);
-  ok(`Month rows: ${chartVnIndex.length} trading days`);
-  ok(`Phase: ${payload.current_phase} → next: ${payload.next_phase_prediction} (${payload.phase_confidence}%)`);
+  ok(`VN Index rows: ${vnIndex.length}  Breadth rows: ${breadth.length}  Panic rows: ${panicScores.length}`);
+  if (resolved.current_phase) {
+    ok(`Phase: ${payload.current_phase} → next: ${payload.next_phase_prediction} (${payload.phase_confidence}%)`);
+  } else {
+    warn('Phase: AI could not determine – payload phase fields are null (will show N/A in UI)');
+  }
 
-  // 11. Write to the current month's GitHub Issue
+  // 6. Write to the current month's GitHub Issue
   step('📝', `Writing to GitHub Issue for ${yearMonth}…`);
   const issueBody = [
     `<!-- AUTO-GENERATED by update-vn-index.yml – do not edit manually. Month: ${yearMonth} -->`,
@@ -746,10 +469,10 @@ async function upsertMonthIssue(yearMonth, body) {
 
   banner('✅  VN Index Phase update complete!');
   ok(`Issue: ${issue.html_url}`);
-  ok(`Month: ${yearMonth}  Phase: ${payload.current_phase}  Confidence: ${payload.phase_confidence}%`);
-  ok(`Next phase: ${payload.next_phase_prediction}`);
-  if (openaiPhase)  ok(`OpenAI phase:  ${openaiPhase.current_phase}  (${openaiPhase.phase_confidence}%)`);
-  if (geminiPhase)  ok(`Gemini phase:  ${geminiPhase.current_phase}  (${geminiPhase.phase_confidence}%)`);
+  ok(`Month: ${yearMonth}  Phase: ${payload.current_phase ?? 'N/A'}  Confidence: ${payload.phase_confidence ?? 'N/A'}%`);
+  ok(`Next phase: ${payload.next_phase_prediction ?? 'N/A'}`);
+  if (openaiData) ok(`OpenAI phase: ${openaiData.current_phase ?? 'N/A'}  (${openaiData.phase_confidence ?? 'N/A'}%)`);
+  if (geminiData) ok(`Gemini phase: ${geminiData.current_phase ?? 'N/A'}  (${geminiData.phase_confidence ?? 'N/A'}%)`);
 })().catch(err => {
   fail(`Fatal error: ${err.message}`);
   console.error(err);
