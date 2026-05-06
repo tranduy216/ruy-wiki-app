@@ -95,103 +95,81 @@ function buildRateDateScaffold(months = 6) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  OpenAI prompt – phase assessment only, no web search
-//  (keeps input tokens ~1500, well under the 10 000 TPM limit)
+//  Unified prompt – used identically for BOTH OpenAI (web_search_preview)
+//  and Gemini (googleSearch grounding) so results are directly comparable.
 // ──────────────────────────────────────────────────────────────
-const OPENAI_PHASE_PROMPT = `Bạn là chuyên gia phân tích thị trường chứng khoán Việt Nam (VNINDEX).
-Đánh giá pha thị trường dựa trên ĐÚNG các tiêu chí sau – KHÔNG chỉ dựa vào MACD:
+const FULL_ANALYSIS_PROMPT = `Bạn là chuyên gia phân tích định lượng thị trường chứng khoán Việt Nam (VNINDEX).
+Tìm kiếm dữ liệu THỰC TẾ từ HOSE/HNX, VietstockFinance (vietstock.vn), CafeF (cafef.vn), TradingView, SBV (Ngân hàng Nhà nước Việt Nam).
 
-TIÊU CHÍ BẮT BUỘC:
-1. Đường trung bình động: vị trí và xu hướng MA10, MA20, MA50
-2. Thanh khoản: volume trung bình 2 tuần gần nhất so với trung bình 2 tháng (tăng/giảm/%)
-3. Breadth: tỷ lệ cổ tăng/cổ giảm (advance/decline ratio) theo phiên
-4. Lãi suất phi rủi ro: lãi suất huy động/SBV/liên ngân hàng so với lịch sử
-5. Lợi suất VNIndex: P/E yield của VNINDEX so với lãi suất phi rủi ro (spread)
+TIÊU CHÍ BẮT BUỘC (KHÔNG chỉ dựa vào MACD):
+1. Đường trung bình động: vị trí và xu hướng MA10, MA20, MA50 – tín hiệu giao cắt
+2. Thanh khoản/Volume: tính trung bình volume 2 tuần gần nhất vs trung bình 2 tháng (tỉ lệ & xu hướng)
+3. Breadth: tỷ lệ cổ tăng/cổ giảm (advance/decline ratio) theo phiên (số cổ tăng vs số cổ giảm)
+4. Lãi suất phi rủi ro: lãi suất SBV, liên ngân hàng, huy động 12 tháng so với lịch sử
+5. Lợi suất VNIndex: implied earnings yield (1/P/E) so với lãi suất phi rủi ro (spread)
 
 Pha thị trường: sideway | uptrend | distribution | downtrend | panic | recovery
-- uptrend: MA20>MA50, vol tăng, adv>dec, P/E yield hấp dẫn hơn lãi suất phi rủi ro
-- distribution: Index flat/tăng nhưng breadth yếu (dec>adv), vol giảm dần
+- uptrend: MA20>MA50, vol tăng (tb 2 tuần > tb 2 tháng), adv>dec, P/E yield hấp dẫn hơn lãi suất phi rủi ro
+- distribution: Index flat/tăng nhưng breadth yếu (dec>adv), vol giảm dần (tb 2 tuần < tb 2 tháng)
 - downtrend: MA20<MA50, dec>adv liên tục, vol thấp
-- panic: Giảm mạnh đột ngột, vol tăng vọt 1.5-2×, dec/adv>3
+- panic: Giảm mạnh đột ngột, vol tăng vọt 1.5-2× trung bình 2 tháng, dec/adv>3-4, sàn hàng loạt
 - recovery: Hồi mạnh sau panic, breadth cải thiện, vol tăng, dip-buying rõ
-- sideway: MA20≈MA50, breadth cân bằng, vol thấp/flat
+- sideway: MA20≈MA50, breadth cân bằng, vol flat so với trung bình 2 tháng
 
-Trả về JSON (chỉ JSON, không text khác):
-{"current_phase":"...","next_phase_prediction":"...","phase_confidence":65,"phase_reason":"...","next_phase_reason":"...","market_commentary":{"vn_index_trend":"...","breadth_trend":"...","market_state":"...","interest_rate_trend":"..."}}`;
+Panic score (1–10): index<=-4%→+3, <=-3%→+2, <=-2%→+1; vol>2×tb20 ngày→+2, >1.5×→+1; dec/adv>4→+3, >3→+2, >2→+1; nhãn: "panic"(≥7)/"high_stress"(≥5)/"normal"(<5)
 
-// ──────────────────────────────────────────────────────────────
-//  Gemini prompt – comprehensive with googleSearch
-//  Condensed to reduce tokens while keeping all required fields
-// ──────────────────────────────────────────────────────────────
-const GEMINI_FULL_PROMPT = `You are a VN Index quantitative analyst. Search the web for REAL current data from HOSE/HNX, VietstockFinance (vietstock.vn), CafeF (cafef.vn), TradingView, SBV (State Bank of Vietnam).
+Dữ liệu cần thu thập (cho tháng được yêu cầu):
+- vn_index: ~20 phiên giao dịch gần nhất, cũ→mới; volume theo VND; ma10/ma50=null nếu không đủ lịch sử
+- breadth: adv_pct, dec_pct, unch_pct theo ngày (cùng ngày với vn_index)
+- panic_scores: theo ngày (cùng ngày với vn_index)
+- interest_rates: đúng 6 điểm tháng cũ→mới; null nếu không có cho tháng đó
+- liquidity_summary: avg_volume_2w (VND trung bình 2 tuần), avg_volume_2m (VND trung bình 2 tháng), volume_ratio=2w/2m, trend="rising"|"declining"|"stable"
 
-ASSESSMENT CRITERIA (mandatory – do NOT base assessment solely on MACD):
-1. Moving averages: MA10, MA20, MA50 – their positions and cross signals
-2. Liquidity/Volume: compute 2-week average volume vs 2-month average volume (ratio & trend)
-3. Breadth: advance/decline ratio per session (số cổ tăng vs số cổ giảm)
-4. Risk-free rate: SBV reference rate, interbank rate, 12-month deposit rate vs historical
-5. VN Index yield: implied earnings yield (1/P/E) vs risk-free rate spread
+QUY TẮC:
+- Luôn điền current_phase, next_phase_prediction, phase_confidence, phase_reason, market_commentary
+- market_commentary phải bằng tiếng Việt và phản ánh điều kiện HIỆN TẠI quan sát được
+- Nếu không có dữ liệu mảng số, đặt [] nhưng KHÔNG để trống market_commentary hoặc các trường phase
 
-Phases: sideway | uptrend | distribution | downtrend | panic | recovery
-- uptrend: MA20>MA50, vol rising (2w avg > 2m avg), adv>dec, P/E yield attractive vs risk-free
-- distribution: Index flat/up but breadth weakening (dec>adv), vol declining (2w avg < 2m avg)
-- downtrend: MA20<MA50, persistent dec>adv, vol low
-- panic: Sharp drop, vol spike 1.5-2× of 2m avg, dec/adv>3-4, widespread limit-down
-- recovery: Strong bounce after panic, breadth improving, vol increasing, dip-buying visible
-- sideway: MA20≈MA50, balanced adv/dec, vol flat relative to 2m avg
-
-Panic score (1–10): index<=-4%→+3, <=-3%→+2, <=-2%→+1; vol>2×20d avg→+2, >1.5×→+1; dec/adv>4→+3, >3→+2, >2→+1; label: "panic"(≥7)/"high_stress"(≥5)/"normal"(<5)
-
-Data to collect (for the requested month):
-- vn_index: last ~20 trading days, oldest→newest; volume in VND; ma10/ma50=null if insufficient history
-- breadth: adv_pct, dec_pct, unch_pct per day (same dates as vn_index)
-- panic_scores: per day (same dates)
-- interest_rates: exactly 6 monthly points oldest→newest; null if unavailable for that month
-- liquidity_summary: avg_volume_2w (2-week avg VND), avg_volume_2m (2-month avg VND), volume_ratio=2w/2m, trend="rising"|"declining"|"stable"
-
-RULES:
-- Always fill current_phase, next_phase_prediction, phase_confidence, phase_reason, market_commentary
-- market_commentary must be in Vietnamese and reflect CURRENT observable conditions
-- If numeric arrays unavailable, set them to [] but NEVER leave market_commentary or phase fields empty
-
-JSON only – no text outside JSON:
+JSON only – không có text bên ngoài JSON:
 {"current_phase":"downtrend","next_phase_prediction":"recovery","phase_confidence":65,"phase_reason":"...","next_phase_reason":"...","market_commentary":{"vn_index_trend":"MA20 đang cắt xuống dưới MA50. Thanh khoản 2 tuần gần nhất thấp hơn trung bình 2 tháng ~15%.","breadth_trend":"Số mã giảm chiếm >60% phiên, advance/decline ratio <0.5 liên tục.","market_state":"Thị trường đang trong giai đoạn downtrend rõ ràng.","interest_rate_trend":"Lãi suất huy động ~5%, lãi suất liên ngân hàng ổn định 4–5%. P/E yield VNINDEX ~7% cao hơn lãi suất phi rủi ro."},"liquidity_summary":{"avg_volume_2w":15000000000,"avg_volume_2m":18000000000,"volume_ratio":0.83,"trend":"declining"},"vn_index":[{"date":"YYYY-MM-DD","open":0,"close":0,"volume":0,"ma10":null,"ma50":null}],"breadth":[{"date":"YYYY-MM-DD","adv_pct":0,"dec_pct":0,"unch_pct":0}],"panic_scores":[{"date":"YYYY-MM-DD","panic_score":0,"label":"normal","reason":[]}],"interest_rates":[{"date":"YYYY-MM-01","deposit_rate":null,"interbank_rate":null}]}`;
 
 // ──────────────────────────────────────────────────────────────
 //  Fetch ALL data from AI
-//  - OpenAI: phase-only, no web_search_preview tool
-//    (removes ~8 000 tool-token overhead → stays under 10 000 TPM limit)
-//  - Gemini: comprehensive with googleSearch (all fields incl. charts)
+//  Both OpenAI (web_search_preview) and Gemini (googleSearch) use the
+//  SAME unified prompt so their assessments are directly comparable.
+//  Numeric data (charts, rates) can fall back Gemini→OpenAI, but
+//  market commentary and phase assessments are collected from BOTH.
 // ──────────────────────────────────────────────────────────────
 async function fetchAllFromAI(yearMonth) {
-  step('🤖', 'Fetching VN Index data from AI (OpenAI phase-only + Gemini full)…');
+  step('🤖', 'Fetching VN Index data from AI (OpenAI + Gemini, same prompt)…');
   const today = new Date().toISOString().split('T')[0];
 
   let openaiResult = null;
   let geminiResult = null;
 
-  // OpenAI – short phase-assessment call, NO web_search_preview tool
+  const userContent = `Hôm nay: ${today}. Tháng: ${yearMonth}. Cung cấp phân tích đầy đủ VN Index cho tháng này.`;
+
+  // OpenAI – same comprehensive prompt with web_search_preview tool
   if (OPENAI_KEY) {
     try {
-      const userContent = `Today: ${today}. Month: ${yearMonth}. Assess current VN Index market phase based on the five mandatory criteria.`;
-      const raw = await callOpenAI(OPENAI_PHASE_PROMPT, userContent, 2000, false);
+      const prompt = `${FULL_ANALYSIS_PROMPT}\n\n${userContent}`;
+      const raw = await callOpenAI(prompt, '', 10000, true);
       openaiResult = extractJSON(raw);
-      if (openaiResult) ok('OpenAI phase fetch succeeded');
+      if (openaiResult) ok('OpenAI full analysis fetch succeeded');
       else              warn('OpenAI returned non-JSON response');
     } catch (e) {
       warn(`OpenAI error: ${e.message}`);
     }
   }
 
-  // Gemini – comprehensive: phase + charts + liquidity summary + rates
+  // Gemini – same comprehensive prompt with googleSearch grounding
   if (GEMINI_KEY) {
     try {
       await sleep(1000);
-      const userContent = `Today: ${today}. Month: ${yearMonth}. Provide the complete VN Index analysis package.`;
-      const prompt = `${GEMINI_FULL_PROMPT}\n\n${userContent}`;
+      const prompt = `${FULL_ANALYSIS_PROMPT}\n\n${userContent}`;
       const raw    = await callGemini(prompt, 15000);
       geminiResult = extractJSON(raw);
-      if (geminiResult) ok('Gemini data fetch succeeded');
+      if (geminiResult) ok('Gemini full analysis fetch succeeded');
       else              warn('Gemini returned non-JSON response');
     } catch (e) {
       warn(`Gemini error: ${e.message}`);
