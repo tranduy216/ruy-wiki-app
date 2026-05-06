@@ -196,6 +196,10 @@
         </h1>
         <div class="header-actions">
           <button class="btn btn-outline btn-sm" onclick="loadVnIndexPhase()" title="Tải lại">🔄 Tải lại</button>
+          <a class="btn btn-outline btn-sm"
+            href="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${VN_WORKFLOW_FILE}"
+            target="_blank" rel="noopener noreferrer" title="Xem workflow"
+          >🔗 Workflow</a>
           <button class="btn btn-primary btn-sm"
             onclick="window.open('https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${VN_WORKFLOW_FILE}','_blank')"
           >⚡ Update data</button>
