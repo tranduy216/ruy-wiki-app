@@ -127,7 +127,7 @@ async function fetchAllFromAI(yearMonth) {
   // OpenAI – same comprehensive prompt with web_search_preview tool
   if (OPENAI_KEY) {
     try {
-      const raw = await callOpenAI(FULL_ANALYSIS_PROMPT, userContent, 10000, true);
+      const raw = await callOpenAI(FULL_ANALYSIS_PROMPT, userContent, 10000, false);
       openaiResult = extractJSON(raw);
       if (openaiResult) ok('OpenAI full analysis fetch succeeded');
       else              warn('OpenAI returned non-JSON response');
@@ -238,14 +238,14 @@ async function callGemini(prompt, maxTokens = 16000) {
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         tools: [{ googleSearch: {} }],
-        // thinkingBudget caps reasoning tokens so the model always has
-        // room for actual output. Budget=0 is incompatible with googleSearch
-        // (model needs reasoning to process search results), so we use a
-        // fixed cap instead of disabling thinking entirely.
-        thinkingConfig: { thinkingBudget: 8000 },
         generationConfig: {
           temperature:      0,
           maxOutputTokens:  maxTokens,
+          // thinkingBudget caps reasoning tokens so the model always has
+          // room for actual output. Budget=0 is incompatible with googleSearch
+          // (model needs reasoning to process search results), so we use a
+          // fixed cap instead of disabling thinking entirely.
+          thinkingConfig: { thinkingBudget: 8000 },
         },
       }),
     });
