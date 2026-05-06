@@ -251,31 +251,46 @@ function buildPanicInput(enriched, breadth) {
 // ──────────────────────────────────────────────────────────────
 //  OpenAI call
 // ──────────────────────────────────────────────────────────────
+function buildCombinedPrompt(systemPrompt, userContent) {
+  return `${systemPrompt}\n\n${userContent}`;
+}
+
 async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
   if (!OPENAI_KEY) return null;
-  info('Calling OpenAI gpt-4o-mini…');
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENAI_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      temperature: 0.2,
-      max_tokens: maxTokens,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user',   content: userContent  },
-      ],
-    }),
-  });
+  info('Calling OpenAI API (gpt-5.4-mini)…');
+  const prompt = buildCombinedPrompt(systemPrompt, userContent);
+  let res;
+  try {
+    res = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${OPENAI_KEY}`,
+      },
+      body: JSON.stringify({
+        model:             'gpt-5.4-mini',
+        temperature:       0,
+        max_output_tokens: maxTokens,
+        input:             prompt,
+        store:             true,
+      }),
+    });
+  } catch (err) {
+    throw new Error(`OpenAI fetch error: ${err.message}`);
+  }
   if (!res.ok) {
-    const txt = await res.text();
+    const txt = await res.text().catch(() => '');
     throw new Error(`OpenAI HTTP ${res.status}: ${txt.slice(0, 200)}`);
   }
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || null;
+  const outputItem = data.output?.[0];
+  const text = outputItem?.content?.[0]?.text || '';
+  const status = data.status || 'unknown';
+  info(`OpenAI response length: ${text.length} chars, status: ${status}`);
+  if (status === 'incomplete') {
+    throw new Error('OpenAI response was truncated (status=incomplete)');
+  }
+  return text.trim() || null;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -283,22 +298,38 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
 // ──────────────────────────────────────────────────────────────
 async function callGemini(prompt, maxTokens = 2500) {
   if (!GEMINI_KEY) return null;
-  info('Calling Gemini gemini-1.5-flash…');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens },
-    }),
-  });
+  info('Calling Gemini API (gemini-2.5-flash)…');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
+  let res;
+  try {
+    res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        contents:         [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature:     0,
+          maxOutputTokens: maxTokens,
+          thinkingConfig:  { thinkingBudget: 0 },
+        },
+      }),
+    });
+  } catch (err) {
+    throw new Error(`Gemini fetch error: ${err.message}`);
+  }
   if (!res.ok) {
-    const txt = await res.text();
+    const txt = await res.text().catch(() => '');
     throw new Error(`Gemini HTTP ${res.status}: ${txt.slice(0, 200)}`);
   }
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts?.[0]?.text?.trim() || '';
+  const finishReason = candidate?.finishReason || 'unknown';
+  info(`Gemini response length: ${text.length} chars, finishReason: ${finishReason}`);
+  if (finishReason === 'MAX_TOKENS') {
+    throw new Error('Gemini response was truncated (finishReason=MAX_TOKENS)');
+  }
+  return text || null;
 }
 
 // ──────────────────────────────────────────────────────────────
