@@ -8,6 +8,7 @@
 
   const VN_DATA_LABEL    = 'vn-index-phase-data';
   const VN_WORKFLOW_FILE = 'update-vn-index.yml';
+  const MONTHS_TO_FETCH  = 6;   // fetch last 6 monthly issues; last 3 used for 3-month charts
 
   // ── Phase definitions ────────────────────────────────────────
   const PHASES = {
@@ -105,7 +106,7 @@
   async function fetchVnData() {
     // Fetch up to 6 monthly issues (gives 6 months for interest rate chart)
     const res = await ghFetch(
-      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues?labels=${VN_DATA_LABEL}&state=open&per_page=6&sort=created&direction=desc`
+      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues?labels=${VN_DATA_LABEL}&state=open&per_page=${MONTHS_TO_FETCH}&sort=created&direction=desc`
     );
     if (!res.ok) throw new Error(`GitHub API lỗi ${res.status}`);
     const issues = await res.json();

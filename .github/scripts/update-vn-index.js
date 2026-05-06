@@ -149,8 +149,11 @@ function enrichWithMA(rows) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Simulated breadth data from index returns
-//  (Real advance/decline would need full market scan)
+//  Simulated breadth data derived from index returns.
+//  NOTE: This is an approximation – real advance/decline data
+//  would require scanning all listed stocks daily.  The AI prompt
+//  for phase determination uses these estimates; treat them as a
+//  directional signal, not precise market-breadth figures.
 // ──────────────────────────────────────────────────────────────
 function estimateBreadth(rows) {
   // Correlate daily index return to estimated breadth:
