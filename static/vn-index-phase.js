@@ -138,6 +138,7 @@
       phase_reason:          latest.phase_reason,
       next_phase_reason:     latest.next_phase_reason,
       asset_allocation:      latest.asset_allocation,
+      provider_analysis:     latest.provider_analysis || null,
       // Merge + deduplicate by date, ascending
       vn_index:     mergeByDate(last3.flatMap(m => m.vn_index     || [])),
       breadth:      mergeByDate(last3.flatMap(m => m.breadth       || [])),
@@ -223,6 +224,8 @@
           </div>` : ''}
         </div>
 
+        ${renderProviderAnalysis(data.provider_analysis)}
+
         <!-- Allocation highlight for current phase -->
         ${currentRow ? `
         <div class="vn-alloc-highlight">
@@ -265,6 +268,46 @@
           </table>
         </div>
       </section>`;
+  }
+
+  // ── Provider analysis cards (OpenAI vs Gemini) ───────────────
+  function renderProviderAnalysis(pa) {
+    if (!pa || (!pa.openai && !pa.gemini)) return '';
+
+    function providerCard(name, color, icon, result) {
+      if (!result) return `
+        <div class="vn-provider-card" style="border-color:${color}20;">
+          <div class="vn-provider-label" style="color:${color};">${icon} ${name}</div>
+          <div class="vn-provider-na">Không có dữ liệu</div>
+        </div>`;
+      const phaseInfo = PHASES[result.current_phase] || PHASES.sideway;
+      const nextInfo  = PHASES[result.next_phase_prediction] || null;
+      return `
+        <div class="vn-provider-card" style="border-color:${color}40;">
+          <div class="vn-provider-label" style="color:${color};">${icon} ${name}</div>
+          <div class="vn-provider-phase">
+            <span class="vn-phase-badge ${phaseInfo.badge}" style="font-size:.78rem;padding:.2rem .6rem;">
+              ${phaseInfo.emoji} ${phaseInfo.label}
+            </span>
+            ${result.phase_confidence ? `<span class="vn-confidence" style="margin-left:.5rem;">${result.phase_confidence}%</span>` : ''}
+          </div>
+          ${result.phase_reason ? `<div class="vn-reason" style="margin-top:.4rem;">${esc(result.phase_reason)}</div>` : ''}
+          ${nextInfo ? `
+          <div style="margin-top:.5rem;font-size:.8rem;color:var(--muted);">
+            Tiếp theo: <span class="vn-phase-badge ${nextInfo.badge}" style="font-size:.72rem;padding:.15rem .5rem;opacity:.85;">${nextInfo.emoji} ${nextInfo.label}</span>
+            ${result.next_phase_reason ? `<div class="vn-reason" style="margin-top:.25rem;">${esc(result.next_phase_reason)}</div>` : ''}
+          </div>` : ''}
+        </div>`;
+    }
+
+    return `
+      <div class="vn-provider-row">
+        <div class="vn-provider-title">🤖 Phân tích AI theo nhà cung cấp</div>
+        <div class="vn-provider-cards">
+          ${providerCard('ChatGPT (OpenAI)', '#3b82f6', '🔵', pa.openai)}
+          ${providerCard('Gemini (Google)', '#ef4444', '🔴', pa.gemini)}
+        </div>
+      </div>`;
   }
 
   // ── Section 2: Charts ────────────────────────────────────────

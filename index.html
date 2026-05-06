@@ -708,6 +708,31 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     /* Criteria table */
     .vn-criteria-table { min-width: 750px; }
     .vn-criteria-table td { font-size: .82rem; }
+    /* Provider analysis (OpenAI vs Gemini) */
+    .vn-provider-row {
+      margin-bottom: 1.4rem;
+    }
+    .vn-provider-title {
+      font-size: .82rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .04em; margin-bottom: .65rem;
+    }
+    .vn-provider-cards {
+      display: flex; gap: 1rem; flex-wrap: wrap;
+    }
+    .vn-provider-card {
+      flex: 1; min-width: 220px;
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: .85rem 1rem;
+    }
+    .vn-provider-label {
+      font-size: .75rem; font-weight: 800; text-transform: uppercase;
+      letter-spacing: .05em; margin-bottom: .5rem;
+    }
+    .vn-provider-phase { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; }
+    .vn-provider-na { font-size: .82rem; color: var(--muted); font-style: italic; }
+    @media (max-width: 700px) {
+      .vn-provider-cards { flex-direction: column; }
+    }
   </style>
   <!-- Chart.js (loaded before page scripts) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>

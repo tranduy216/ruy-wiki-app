@@ -249,16 +249,12 @@ function buildPanicInput(enriched, breadth) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  OpenAI call
+//  OpenAI call  (Responses API – gpt-5.4-mini, matching pivot style)
 // ──────────────────────────────────────────────────────────────
-function buildCombinedPrompt(systemPrompt, userContent) {
-  return `${systemPrompt}\n\n${userContent}`;
-}
-
 async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
   if (!OPENAI_KEY) return null;
   info('Calling OpenAI API (gpt-5.4-mini)…');
-  const prompt = buildCombinedPrompt(systemPrompt, userContent);
+  const prompt = `${systemPrompt}\n\n${userContent}`;
   let res;
   try {
     res = await fetch('https://api.openai.com/v1/responses', {
@@ -284,8 +280,8 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
   }
   const data = await res.json();
   const outputItem = data.output?.[0];
-  const text = outputItem?.content?.[0]?.text || '';
-  const status = data.status || 'unknown';
+  const text       = outputItem?.content?.[0]?.text || '';
+  const status     = data.status || 'unknown';
   info(`OpenAI response length: ${text.length} chars, status: ${status}`);
   if (status === 'incomplete') {
     throw new Error('OpenAI response was truncated (status=incomplete)');
@@ -294,7 +290,7 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Gemini call
+//  Gemini call  (gemini-2.5-flash, matching pivot style)
 // ──────────────────────────────────────────────────────────────
 async function callGemini(prompt, maxTokens = 2500) {
   if (!GEMINI_KEY) return null;
@@ -303,14 +299,14 @@ async function callGemini(prompt, maxTokens = 2500) {
   let res;
   try {
     res = await fetch(url, {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        contents:         [{ parts: [{ text: prompt }] }],
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature:     0,
-          maxOutputTokens: maxTokens,
-          thinkingConfig:  { thinkingBudget: 0 },
+          temperature:      0,
+          maxOutputTokens:  maxTokens,
+          thinkingConfig:   { thinkingBudget: 0 },
         },
       }),
     });
@@ -321,9 +317,9 @@ async function callGemini(prompt, maxTokens = 2500) {
     const txt = await res.text().catch(() => '');
     throw new Error(`Gemini HTTP ${res.status}: ${txt.slice(0, 200)}`);
   }
-  const data = await res.json();
-  const candidate = data.candidates?.[0];
-  const text = candidate?.content?.parts?.[0]?.text?.trim() || '';
+  const data        = await res.json();
+  const candidate   = data.candidates?.[0];
+  const text        = candidate?.content?.parts?.[0]?.text?.trim() || '';
   const finishReason = candidate?.finishReason || 'unknown';
   info(`Gemini response length: ${text.length} chars, finishReason: ${finishReason}`);
   if (finishReason === 'MAX_TOKENS') {
@@ -376,48 +372,54 @@ OUTPUT: Strict JSON only, no explanation outside JSON.
 For deposit_rates and interbank_rates: provide 6 monthly data points (last 6 months) using your knowledge of Vietnam interest rates.`;
 
 async function determinePhase(aiInput) {
-  step('🤖', 'Determining VN Index Phase via AI…');
+  step('🤖', 'Determining VN Index Phase via AI (OpenAI + Gemini independently)…');
   const userContent = `VN Index data (last 90 trading days):\n${JSON.stringify(aiInput, null, 2)}`;
 
-  let result = null;
+  // Call both providers independently so we can store separate analytical outputs.
+  let openaiResult = null;
+  let geminiResult = null;
+
   if (OPENAI_KEY) {
     try {
       const raw = await callOpenAI(PHASE_SYSTEM_PROMPT, userContent, 800);
-      result = extractJSON(raw);
-      if (result) ok('OpenAI phase determination succeeded');
-      else         warn('OpenAI returned non-JSON phase response');
+      openaiResult = extractJSON(raw);
+      if (openaiResult) ok('OpenAI phase determination succeeded');
+      else              warn('OpenAI returned non-JSON phase response');
     } catch (e) {
       warn(`OpenAI phase error: ${e.message}`);
     }
   }
 
-  if (!result && GEMINI_KEY) {
+  if (GEMINI_KEY) {
     try {
       await sleep(1000);
       const prompt = `${PHASE_SYSTEM_PROMPT}\n\n${userContent}`;
       const raw    = await callGemini(prompt, 800);
-      result = extractJSON(raw);
-      if (result) ok('Gemini phase determination succeeded');
-      else         warn('Gemini returned non-JSON phase response');
+      geminiResult = extractJSON(raw);
+      if (geminiResult) ok('Gemini phase determination succeeded');
+      else              warn('Gemini returned non-JSON phase response');
     } catch (e) {
       warn(`Gemini phase error: ${e.message}`);
     }
   }
 
-  if (!result) {
-    warn('AI phase determination failed – using fallback (sideway)');
-    result = {
-      current_phase: 'sideway',
-      next_phase_prediction: 'uptrend',
-      phase_confidence: 50,
-      phase_reason: 'AI analysis unavailable – using default phase.',
-      next_phase_reason: '',
-      deposit_rates: [],
-      interbank_rates: [],
-    };
+  // Resolved top-level values: prefer OpenAI, fall back to Gemini, then hardcoded default.
+  const resolved = openaiResult || geminiResult || {
+    current_phase:         'sideway',
+    next_phase_prediction: 'uptrend',
+    phase_confidence:      50,
+    phase_reason:          'AI analysis unavailable – using default phase.',
+    next_phase_reason:     '',
+    deposit_rates:         [],
+    interbank_rates:       [],
+  };
+
+  if (!openaiResult && !geminiResult) {
+    warn('AI phase determination failed for both providers – using hardcoded fallback (sideway)');
   }
 
-  return result;
+  // Return per-provider results alongside the resolved value.
+  return { openai: openaiResult, gemini: geminiResult, resolved };
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -634,17 +636,22 @@ async function upsertMonthIssue(yearMonth, body) {
   const aiInput    = buildAiInput(enriched, breadth);
   const panicInput = buildPanicInput(enriched, breadth);
 
-  // 5. AI: phase determination
+  // 5. AI: phase determination (both OpenAI and Gemini run independently)
   await sleep(500);
-  const phaseResult = await determinePhase(aiInput);
+  const phaseResult  = await determinePhase(aiInput);
+  const openaiPhase  = phaseResult.openai;
+  const geminiPhase  = phaseResult.gemini;
+  const resolved     = phaseResult.resolved;
 
-  // 6. AI: panic scores (for all rows that go into the AI window)
+  // 6. AI: panic scores (chart/numeric – OpenAI → Gemini → rule-based API fallback)
   await sleep(500);
   const panicScores = await calcPanicScores(panicInput);
 
-  // 7. Build interest rate data
-  const depositRates   = phaseResult.deposit_rates   || [];
-  const interbankRates = phaseResult.interbank_rates  || [];
+  // 7. Build interest rate data.
+  //    Priority: OpenAI rates → Gemini rates → empty (null values from buildInterestRates).
+  //    Raw API/computed rates serve as the deterministic fallback via buildInterestRates().
+  const depositRates   = openaiPhase?.deposit_rates   || geminiPhase?.deposit_rates   || resolved.deposit_rates   || [];
+  const interbankRates = openaiPhase?.interbank_rates  || geminiPhase?.interbank_rates  || resolved.interbank_rates  || [];
   const interestRates  = buildInterestRates(6).map((r, i) => ({
     date:           r.date,
     deposit_rate:   depositRates[i]?.rate   ?? null,
@@ -680,18 +687,39 @@ async function upsertMonthIssue(yearMonth, body) {
     panic:        { equity: '40–60%', cash: '20–30%', gold: '10–20%', crypto: '0–10%',  strategy: 'Bắt đầu mua (scale-in)' },
     recovery:     { equity: '60–80%', cash: '10–20%', gold: '5–10%',  crypto: '5–15%',  strategy: 'Add position, tăng risk' },
   };
-  const allocation = allocationMap[phaseResult.current_phase] || allocationMap.sideway;
+  const allocation = allocationMap[resolved.current_phase] || allocationMap.sideway;
 
-  // 10. Assemble payload (month-scoped data only)
+  // 10. Assemble payload (month-scoped data only).
+  //     Top-level phase fields use the resolved (OpenAI-preferred) value for UI backward-compat.
+  //     provider_analysis stores the separate per-provider outputs for deeper inspection.
   step('📦', 'Assembling monthly payload…');
+
+  const providerAnalysis = {
+    openai: openaiPhase ? {
+      current_phase:         openaiPhase.current_phase,
+      next_phase_prediction: openaiPhase.next_phase_prediction,
+      phase_confidence:      openaiPhase.phase_confidence,
+      phase_reason:          openaiPhase.phase_reason,
+      next_phase_reason:     openaiPhase.next_phase_reason || '',
+    } : null,
+    gemini: geminiPhase ? {
+      current_phase:         geminiPhase.current_phase,
+      next_phase_prediction: geminiPhase.next_phase_prediction,
+      phase_confidence:      geminiPhase.phase_confidence,
+      phase_reason:          geminiPhase.phase_reason,
+      next_phase_reason:     geminiPhase.next_phase_reason || '',
+    } : null,
+  };
+
   const payload = {
     updated_at:            isoToday(),
     month:                 yearMonth,
-    current_phase:         phaseResult.current_phase,
-    next_phase_prediction: phaseResult.next_phase_prediction,
-    phase_confidence:      phaseResult.phase_confidence,
-    phase_reason:          phaseResult.phase_reason,
-    next_phase_reason:     phaseResult.next_phase_reason || '',
+    current_phase:         resolved.current_phase,
+    next_phase_prediction: resolved.next_phase_prediction,
+    phase_confidence:      resolved.phase_confidence,
+    phase_reason:          resolved.phase_reason,
+    next_phase_reason:     resolved.next_phase_reason || '',
+    provider_analysis:     providerAnalysis,
     asset_allocation:      allocation,
     vn_index:              chartVnIndex,
     breadth:               monthBreadth,
@@ -720,6 +748,8 @@ async function upsertMonthIssue(yearMonth, body) {
   ok(`Issue: ${issue.html_url}`);
   ok(`Month: ${yearMonth}  Phase: ${payload.current_phase}  Confidence: ${payload.phase_confidence}%`);
   ok(`Next phase: ${payload.next_phase_prediction}`);
+  if (openaiPhase)  ok(`OpenAI phase:  ${openaiPhase.current_phase}  (${openaiPhase.phase_confidence}%)`);
+  if (geminiPhase)  ok(`Gemini phase:  ${geminiPhase.current_phase}  (${geminiPhase.phase_confidence}%)`);
 })().catch(err => {
   fail(`Fatal error: ${err.message}`);
   console.error(err);
