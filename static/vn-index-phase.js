@@ -285,6 +285,8 @@
       const phaseInfo = PHASES[result.current_phase] || PHASES.sideway;
       const nextInfo  = PHASES[result.next_phase_prediction] || null;
       const { summary, bullets } = splitReason(result.phase_reason || '');
+      const mc = result.market_commentary || {};
+      const mcItems = [mc.vn_index_trend, mc.breadth_trend, mc.market_state, mc.interest_rate_trend].filter(Boolean);
       return `
         <div class="vn-provider-card" style="border-color:${color}30;">
           <div class="vn-provider-label" style="color:${color};">${icon} ${name}</div>
@@ -300,6 +302,10 @@
           ${bullets.length ? `
           <ul class="vn-provider-bullets">
             ${bullets.map(b => `<li>${esc(b)}</li>`).join('')}
+          </ul>` : ''}
+          ${mcItems.length ? `
+          <ul class="vn-provider-bullets vn-provider-mc">
+            ${mcItems.map(item => `<li>${esc(item)}</li>`).join('')}
           </ul>` : ''}
         </div>`;
     }
