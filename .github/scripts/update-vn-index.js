@@ -151,7 +151,8 @@ OUTPUT: Strict JSON only, no explanation outside JSON.
 Notes:
 - vn_index, breadth, panic_scores must cover the same trading dates, oldest first
 - volume is in VND (e.g. 15000000000 = 15 billion VND)
-- interest_rates: exactly 6 monthly data points, oldest first`;
+- ma10 = 10-day simple moving average of closing prices; ma50 = 50-day SMA. Set to null if insufficient history.
+- interest_rates: exactly 6 monthly data points (oldest first). Use null for deposit_rate or interbank_rate if data is unavailable for that month; do NOT omit the entry.`;
 
 // ──────────────────────────────────────────────────────────────
 //  Fetch ALL data from AI (phase + charts + rates)
