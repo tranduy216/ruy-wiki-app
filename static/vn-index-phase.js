@@ -101,19 +101,57 @@
     }
   }
 
-  // ── Fetch data from GitHub Issue ─────────────────────────────
+  // ── Fetch data: last N monthly issues, merge for charts ──────
   async function fetchVnData() {
+    // Fetch up to 6 monthly issues (gives 6 months for interest rate chart)
     const res = await ghFetch(
-      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues?labels=${VN_DATA_LABEL}&state=open&per_page=1`
+      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues?labels=${VN_DATA_LABEL}&state=open&per_page=6&sort=created&direction=desc`
     );
     if (!res.ok) throw new Error(`GitHub API lỗi ${res.status}`);
     const issues = await res.json();
     if (!issues.length) throw new Error('Chưa có dữ liệu VN Index Phase. Vui lòng chạy workflow "Update VN Index" trên GitHub Actions.');
-    const body = issues[0].body || '';
-    // Extract JSON from code block
-    const match = body.match(/```json\s*([\s\S]*?)```/);
-    if (!match) throw new Error('Dữ liệu bị lỗi định dạng trong GitHub Issue.');
-    return JSON.parse(match[1]);
+
+    // Parse each issue body
+    const months = issues
+      .map(issue => {
+        const body  = issue.body || '';
+        const match = body.match(/```json\s*([\s\S]*?)```/);
+        if (!match) return null;
+        try { return JSON.parse(match[1]); } catch { return null; }
+      })
+      .filter(Boolean)
+      .sort((a, b) => (a.month || '').localeCompare(b.month || ''));  // oldest→newest
+
+    if (!months.length) throw new Error('Dữ liệu bị lỗi định dạng trong GitHub Issues.');
+
+    // Latest month = phase state
+    const latest = months[months.length - 1];
+
+    // Merge vn_index, breadth, panic_scores from last 3 months
+    const last3  = months.slice(-3);
+    const merged = {
+      updated_at:            latest.updated_at,
+      current_phase:         latest.current_phase,
+      next_phase_prediction: latest.next_phase_prediction,
+      phase_confidence:      latest.phase_confidence,
+      phase_reason:          latest.phase_reason,
+      next_phase_reason:     latest.next_phase_reason,
+      asset_allocation:      latest.asset_allocation,
+      // Merge + deduplicate by date, ascending
+      vn_index:     mergeByDate(last3.flatMap(m => m.vn_index     || [])),
+      breadth:      mergeByDate(last3.flatMap(m => m.breadth       || [])),
+      panic_scores: mergeByDate(last3.flatMap(m => m.panic_scores  || [])),
+      // Interest rates: take from latest (it already has 6-month history)
+      interest_rates: latest.interest_rates || [],
+    };
+
+    return merged;
+  }
+
+  function mergeByDate(rows) {
+    const map = new Map();
+    for (const r of rows) if (r.date) map.set(r.date, r);
+    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
   }
 
   // ── Main render ──────────────────────────────────────────────
@@ -133,8 +171,9 @@
         </h1>
         <div class="header-actions">
           <button class="btn btn-outline btn-sm" onclick="loadVnIndexPhase()" title="Tải lại">🔄 Tải lại</button>
-          <a href="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${VN_WORKFLOW_FILE}"
-             target="_blank" class="btn btn-navy btn-sm">⚡ Chạy workflow</a>
+          <button class="btn btn-primary btn-sm"
+            onclick="window.open('https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${VN_WORKFLOW_FILE}','_blank')"
+          >⚡ Update data</button>
         </div>
       </div>
 

@@ -2,8 +2,10 @@
 // ================================================================
 //  update-vn-index.js
 //  Fetches VN Index data from TCBS public API, calls OpenAI / Gemini
-//  for phase determination + panic scoring, and updates the
-//  "vn-index-phase-data" GitHub Issue.
+//  for phase determination + panic scoring, and updates one GitHub
+//  Issue per calendar month (label: vn-index-phase-data).
+//
+//  Schedule: daily Mon-Fri at 13:00 UTC (20:00 ICT) after VN market.
 //
 //  Required env vars:
 //    GITHUB_TOKEN   – auto-provided by GitHub Actions (issues:write)
@@ -16,7 +18,12 @@
 
 const GH_API     = 'https://api.github.com';
 const DATA_LABEL = 'vn-index-phase-data';
-const DATA_TITLE = '📊 VN Index Phase Data';
+
+// Issue title includes the month so each month gets its own issue.
+// e.g. "📊 VN Index Phase Data – 2025-01"
+function monthlyTitle(yearMonth) {
+  return `📊 VN Index Phase Data – ${yearMonth}`;
+}
 
 // ──────────────────────────────────────────────────────────────
 //  Logging helpers
@@ -66,14 +73,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // ──────────────────────────────────────────────────────────────
 //  Date helpers
 // ──────────────────────────────────────────────────────────────
-function daysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().split('T')[0];
+function isoToday() { return new Date().toISOString(); }
+
+// Returns "YYYY-MM" for the current month in ICT (UTC+7)
+function currentYearMonth() {
+  const ict = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  return ict.toISOString().slice(0, 7);        // e.g. "2025-01"
 }
 
-function isoToday() {
-  return new Date().toISOString();
+// First and last date of a "YYYY-MM" month as ISO strings
+function monthRange(yearMonth) {
+  const [y, m] = yearMonth.split('-').map(Number);
+  const start  = new Date(Date.UTC(y, m - 1, 1)).toISOString().split('T')[0];
+  const end    = new Date(Date.UTC(y, m, 0)).toISOString().split('T')[0];
+  return { start, end };
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -506,43 +519,50 @@ async function ghFetch(path, opts = {}) {
   return fetch(`${GH_API}${path}`, { ...opts, headers });
 }
 
-async function ensureLabel(name, color, desc) {
-  await ghFetch(`/repos/${GH_OWNER}/${GH_REPO}/labels`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, color, description: desc }),
-  });
-  // 422 = already exists; ignore
+async function findMonthIssue(yearMonth) {
+  const title = monthlyTitle(yearMonth);
+  // Search all open issues with the label, then match by title
+  let page = 1;
+  while (true) {
+    const res = await ghFetch(
+      `/repos/${GH_OWNER}/${GH_REPO}/issues?labels=${DATA_LABEL}&state=open&per_page=30&page=${page}`
+    );
+    if (!res.ok) throw new Error(`GitHub issues list HTTP ${res.status}`);
+    const list = await res.json();
+    if (!list.length) break;
+    const found = list.find(i => i.title === title);
+    if (found) return found;
+    if (list.length < 30) break;
+    page++;
+  }
+  return null;
 }
 
-async function findDataIssue() {
-  const res = await ghFetch(
-    `/repos/${GH_OWNER}/${GH_REPO}/issues?labels=${DATA_LABEL}&state=open&per_page=1`
-  );
-  if (!res.ok) throw new Error(`GitHub issues list HTTP ${res.status}`);
-  const list = await res.json();
-  return list[0] || null;
-}
-
-async function upsertDataIssue(body) {
-  const existing = await findDataIssue();
+async function upsertMonthIssue(yearMonth, body) {
+  const title    = monthlyTitle(yearMonth);
+  const existing = await findMonthIssue(yearMonth);
   if (existing) {
-    info(`Updating existing issue #${existing.number}…`);
+    info(`Updating existing issue #${existing.number} (${yearMonth})…`);
     const res = await ghFetch(`/repos/${GH_OWNER}/${GH_REPO}/issues/${existing.number}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: DATA_TITLE, body }),
+      body: JSON.stringify({ title, body }),
     });
     if (!res.ok) throw new Error(`Issue update HTTP ${res.status}`);
     ok(`Issue #${existing.number} updated`);
     return await res.json();
   } else {
-    info('Creating new data issue…');
-    await ensureLabel(DATA_LABEL, '0d1526', 'VN Index Phase data store');
+    info(`Creating new issue for ${yearMonth}…`);
+    // Ensure label exists (422 = already exists, ignore)
+    await ghFetch(`/repos/${GH_OWNER}/${GH_REPO}/labels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: DATA_LABEL, color: '0d1526', description: 'VN Index Phase monthly data' }),
+    });
     const res = await ghFetch(`/repos/${GH_OWNER}/${GH_REPO}/issues`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: DATA_TITLE, body, labels: [DATA_LABEL] }),
+      body: JSON.stringify({ title, body, labels: [DATA_LABEL] }),
     });
     if (!res.ok) throw new Error(`Issue create HTTP ${res.status}`);
     const issue = await res.json();
@@ -555,23 +575,28 @@ async function upsertDataIssue(body) {
 //  Main
 // ──────────────────────────────────────────────────────────────
 (async () => {
-  banner('VN Index Phase – Data Update');
+  banner('VN Index Phase – Daily Data Update');
 
-  // 1. Fetch raw VN Index data (190 days for enough MA50 history)
+  const yearMonth = currentYearMonth();
+  const { start: monthStart } = monthRange(yearMonth);
+  ok(`Month: ${yearMonth}  (from ${monthStart})`);
+
+  // 1. Fetch raw VN Index data.
+  //    We fetch 190 days to have enough history for MA50,
+  //    but only persist the current month's data in the issue.
   step('📥', 'Fetching VN Index from TCBS…');
   const rawRows  = await fetchVnIndexHistory(190);
 
-  // 2. Enrich with MA10 / MA50
+  // 2. Enrich with MA10 / MA50 (using full history for accuracy)
   step('📐', 'Calculating MA10 & MA50…');
   const enriched = enrichWithMA(rawRows);
-  ok(`Enriched ${enriched.length} rows with MA10/MA50`);
+  ok(`Enriched ${enriched.length} rows`);
 
-  // 3. Estimate breadth
-  step('📊', 'Estimating market breadth (advance/decline)…');
+  // 3. Estimate breadth for all rows
+  step('📊', 'Estimating market breadth…');
   const breadth  = estimateBreadth(enriched);
-  ok(`Breadth estimated for ${breadth.length} days`);
 
-  // 4. Prepare AI inputs
+  // 4. Prepare AI inputs (last 90 trading days for context)
   const aiInput    = buildAiInput(enriched, breadth);
   const panicInput = buildPanicInput(enriched, breadth);
 
@@ -579,11 +604,11 @@ async function upsertDataIssue(body) {
   await sleep(500);
   const phaseResult = await determinePhase(aiInput);
 
-  // 6. AI: panic scores
+  // 6. AI: panic scores (for all rows that go into the AI window)
   await sleep(500);
   const panicScores = await calcPanicScores(panicInput);
 
-  // 7. Build interest rate data using AI result
+  // 7. Build interest rate data
   const depositRates   = phaseResult.deposit_rates   || [];
   const interbankRates = phaseResult.interbank_rates  || [];
   const interestRates  = buildInterestRates(6).map((r, i) => ({
@@ -592,9 +617,18 @@ async function upsertDataIssue(body) {
     interbank_rate: interbankRates[i]?.rate ?? null,
   }));
 
-  // 8. Slice to 3-month window for charts (last 63 trading days ≈ 3 months)
-  const WINDOW_3M = 63;
-  const chartVnIndex = enriched.slice(-WINDOW_3M).map(r => ({
+  // 8. Filter to CURRENT MONTH only for issue storage.
+  //    This keeps each issue small (≈ 20 trading days).
+  const monthRows    = enriched.filter(r => r.date >= monthStart);
+  const monthBreadth = breadth.filter(r => r.date >= monthStart);
+
+  // Align panic scores to month rows (panic scores cover the last 90 days window)
+  const monthPanic = monthRows.map(r => {
+    const ps = panicScores.find(p => p.date === r.date);
+    return ps || { date: r.date, panic_score: 1, label: 'normal', reason: [] };
+  });
+
+  const chartVnIndex = monthRows.map(r => ({
     date:   r.date,
     open:   r.open,
     close:  r.close,
@@ -602,8 +636,6 @@ async function upsertDataIssue(body) {
     ma10:   r.ma10,
     ma50:   r.ma50,
   }));
-  const chartBreadth     = breadth.slice(-WINDOW_3M);
-  const chartPanicScores = panicScores.slice(-WINDOW_3M);
 
   // 9. Asset allocation mapping
   const allocationMap = {
@@ -616,10 +648,11 @@ async function upsertDataIssue(body) {
   };
   const allocation = allocationMap[phaseResult.current_phase] || allocationMap.sideway;
 
-  // 10. Assemble final payload
-  step('📦', 'Assembling final payload…');
+  // 10. Assemble payload (month-scoped data only)
+  step('📦', 'Assembling monthly payload…');
   const payload = {
     updated_at:            isoToday(),
+    month:                 yearMonth,
     current_phase:         phaseResult.current_phase,
     next_phase_prediction: phaseResult.next_phase_prediction,
     phase_confidence:      phaseResult.phase_confidence,
@@ -627,19 +660,19 @@ async function upsertDataIssue(body) {
     next_phase_reason:     phaseResult.next_phase_reason || '',
     asset_allocation:      allocation,
     vn_index:              chartVnIndex,
-    breadth:               chartBreadth,
-    panic_scores:          chartPanicScores,
-    interest_rates:        interestRates,
+    breadth:               monthBreadth,
+    panic_scores:          monthPanic,
+    interest_rates:        interestRates,  // 6 monthly points, same in every issue
   };
 
-  ok(`Payload: ${JSON.stringify(payload).length} bytes`);
+  ok(`Payload size: ${JSON.stringify(payload).length} bytes`);
+  ok(`Month rows: ${chartVnIndex.length} trading days`);
   ok(`Phase: ${payload.current_phase} → next: ${payload.next_phase_prediction} (${payload.phase_confidence}%)`);
-  ok(`VN Index rows: ${payload.vn_index.length}, Breadth: ${payload.breadth.length}, Panic: ${payload.panic_scores.length}`);
 
-  // 11. Write to GitHub Issue
-  step('📝', 'Updating GitHub Issue…');
+  // 11. Write to the current month's GitHub Issue
+  step('📝', `Writing to GitHub Issue for ${yearMonth}…`);
   const issueBody = [
-    '<!-- AUTO-GENERATED by update-vn-index.yml – do not edit manually -->',
+    `<!-- AUTO-GENERATED by update-vn-index.yml – do not edit manually. Month: ${yearMonth} -->`,
     `**Last updated:** ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} (ICT)`,
     '',
     '```json',
@@ -647,12 +680,12 @@ async function upsertDataIssue(body) {
     '```',
   ].join('\n');
 
-  const issue = await upsertDataIssue(issueBody);
+  const issue = await upsertMonthIssue(yearMonth, issueBody);
 
   banner('✅  VN Index Phase update complete!');
-  ok(`Issue URL: ${issue.html_url}`);
-  ok(`Phase: ${payload.current_phase} (confidence: ${payload.phase_confidence}%)`);
-  ok(`Next: ${payload.next_phase_prediction}`);
+  ok(`Issue: ${issue.html_url}`);
+  ok(`Month: ${yearMonth}  Phase: ${payload.current_phase}  Confidence: ${payload.phase_confidence}%`);
+  ok(`Next phase: ${payload.next_phase_prediction}`);
 })().catch(err => {
   fail(`Fatal error: ${err.message}`);
   console.error(err);

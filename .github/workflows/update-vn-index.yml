@@ -2,7 +2,7 @@ name: Update VN Index Phase Data
 
 on:
   schedule:
-    - cron: '0 10 * * 2-6'   # Tue-Sat at 10:00 UTC (17:00 ICT) – after VN market close
+    - cron: '0 13 * * 1-5'   # Mon-Fri at 13:00 UTC (20:00 ICT) – after VN market close
   workflow_dispatch:           # Allow manual trigger from Actions tab
 
 jobs:
