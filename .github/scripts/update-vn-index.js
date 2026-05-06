@@ -129,7 +129,14 @@ Panic score rules (1–10, sum of components):
 - dec/adv ratio > 4 → +3, > 3 → +2, > 2 → +1
 - Label: "panic" (score≥7), "high_stress" (score≥5), "normal" (score<5)
 
-If you cannot provide a specific field with sufficient confidence, set it to null (for scalars) or [] (for arrays).
+CRITICAL RULES:
+1. current_phase, next_phase_prediction, phase_confidence, phase_reason MUST always be filled.
+   Even if you cannot obtain exact numeric data, you MUST assess the phase qualitatively
+   using the phase rules above (MA relationship, breadth direction, volume, market behavior).
+2. market_commentary MUST always be filled with qualitative observations in Vietnamese.
+   This is the primary fallback when numeric chart data is unavailable.
+3. If you cannot provide exact numeric rows for vn_index/breadth/panic_scores/interest_rates,
+   set those arrays to [] but NEVER leave market_commentary empty.
 
 OUTPUT: Strict JSON only, no explanation outside JSON.
 
@@ -139,6 +146,12 @@ OUTPUT: Strict JSON only, no explanation outside JSON.
   "phase_confidence": 65,
   "phase_reason": "...",
   "next_phase_reason": "...",
+  "market_commentary": {
+    "vn_index_trend": "MA10 đang có xu hướng gần lại MA50. Thanh khoản đang ở mức 20–25 nghìn tỷ/phiên, thấp hơn trung bình 3 tháng.",
+    "breadth_trend": "Số lượng mã tăng đang có xu hướng ít dần so với mã giảm trong 2 tuần gần nhất.",
+    "market_state": "Thị trường có vẻ đang ở trạng thái phân phối – index giữ nhưng breadth xấu dần.",
+    "interest_rate_trend": "Lãi suất huy động đang tăng nhẹ trong tháng gần nhất. Lãi suất liên ngân hàng ổn định quanh 4.5–5%."
+  },
   "vn_index": [
     {"date":"YYYY-MM-DD","open":1200.5,"close":1210.3,"volume":15000000000,"ma10":1205.0,"ma50":1190.0}
   ],
@@ -157,7 +170,8 @@ Notes:
 - vn_index, breadth, panic_scores must cover the same trading dates, oldest first
 - volume is in VND (e.g. 15000000000 = 15 billion VND)
 - ma10 = 10-day simple moving average of closing prices; ma50 = 50-day SMA. Set to null if insufficient history.
-- interest_rates: exactly 6 monthly data points (oldest first). Use null for deposit_rate or interbank_rate if data is unavailable for that month; do NOT omit the entry.`;
+- interest_rates: exactly 6 monthly data points (oldest first). Use null for deposit_rate or interbank_rate if data is unavailable for that month; do NOT omit the entry.
+- market_commentary fields must be in Vietnamese and describe the CURRENT observable trend, not generic descriptions.`;
 
 // ──────────────────────────────────────────────────────────────
 //  Fetch ALL data from AI (phase + charts + rates)
@@ -202,6 +216,7 @@ async function fetchAllFromAI(yearMonth) {
     phase_confidence:      null,
     phase_reason:          null,
     next_phase_reason:     null,
+    market_commentary:     null,
     vn_index:              [],
     breadth:               [],
     panic_scores:          [],
@@ -305,7 +320,7 @@ async function callGemini(prompt, maxTokens = 16000) {
   info(`Gemini response length: ${text.length} chars, finishReason: ${finishReason}`);
   if (finishReason === 'MAX_TOKENS') {
     // Don't throw – try to parse whatever was returned before truncation.
-    warn('Gemini response was truncated (finishReason=MAX_TOKENS) – attempting partial parse');
+    warn('Gemini response was truncated (finishReason=MAX_TOKENS) – attempting partial parse (some analysis fields may be missing or incomplete)');
   }
   return text || null;
 }
@@ -426,7 +441,10 @@ async function upsertMonthIssue(yearMonth, body) {
                      || (Array.isArray(geminiData?.interest_rates) && geminiData.interest_rates.length ? geminiData.interest_rates : null)
                      || buildRateDateScaffold(6).map(date => ({ date, deposit_rate: null, interbank_rate: null }));
 
-  // 4. Asset allocation mapping
+  // 4. Market commentary: prefer OpenAI → Gemini → null
+  const marketCommentary = openaiData?.market_commentary || geminiData?.market_commentary || null;
+
+  // 5. Asset allocation mapping
   const allocationMap = {
     sideway:      { equity: '30–40%', cash: '40–50%', gold: '10–20%', crypto: '0–10%',  strategy: 'Giữ tiền, chờ break' },
     uptrend:      { equity: '60–70%', cash: '20–30%', gold: '5–10%',  crypto: '5–15%',  strategy: 'Ride trend, giữ winner' },
@@ -468,6 +486,7 @@ async function upsertMonthIssue(yearMonth, body) {
     phase_reason:          resolved.phase_reason,
     next_phase_reason:     resolved.next_phase_reason || '',
     provider_analysis:     providerAnalysis,
+    market_commentary:     marketCommentary,
     asset_allocation:      allocation || {},
     vn_index:              vnIndex,
     breadth:               breadth,
