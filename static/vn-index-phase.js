@@ -90,6 +90,25 @@
     _charts = {};
   }
 
+  // ── Helper: split reason text into { summary, bullets } ──────
+  function splitReason(text) {
+    if (!text) return { summary: '', bullets: [] };
+    // Try splitting by common bullet markers or newlines first
+    const byBullet = text.split(/\n|•|・/).map(s => s.trim()).filter(Boolean);
+    if (byBullet.length >= 2) {
+      return { summary: byBullet[0], bullets: byBullet.slice(1, 4) };
+    }
+    // Split by sentence boundaries (period followed by space or end)
+    const bySentence = text.split(/\.\s+/).filter(Boolean);
+    if (bySentence.length >= 2) {
+      return {
+        summary: bySentence[0] + '.',
+        bullets: bySentence.slice(1, 4).map(s => s.endsWith('.') ? s : s + '.'),
+      };
+    }
+    return { summary: text, bullets: [] };
+  }
+
   // ── Main entry point ─────────────────────────────────────────
   async function loadVnIndexPhase() {
     destroyCharts();
@@ -160,6 +179,8 @@
   function renderVnIndexPhase(data) {
     const phase = data.current_phase || 'sideway';
     const phaseInfo = PHASES[phase] || PHASES.sideway;
+    const allocation = data.asset_allocation || {};
+    const currentRow = ASSET_TABLE.find(r => r.phase.toLowerCase() === phase.toLowerCase());
     const updatedAt = data.updated_at
       ? new Date(data.updated_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
       : 'N/A';
@@ -179,98 +200,72 @@
         </div>
       </div>
 
-      ${renderSection1(data, phaseInfo, phase)}
-      ${renderSection2(data)}
-      ${renderSection3()}
+      ${renderHero(data, phaseInfo, phase, allocation, currentRow)}
+      ${renderAiSummary(data)}
+      ${renderProviderAnalysis(data.provider_analysis)}
+      ${renderAllocation(data, phase, allocation, currentRow)}
+      ${renderChartsSection(data)}
+      ${renderCriteriaSection()}
     `;
 
     // Draw charts after DOM is ready
     requestAnimationFrame(() => drawCharts(data));
   }
 
-  // ── Section 1: Phase state + prediction + asset allocation ───
-  function renderSection1(data, phaseInfo, phase) {
+  // ── Hero: Current phase, Next phase, Confidence, Suggested action ──
+  function renderHero(data, phaseInfo, phase, allocation, currentRow) {
     const nextPhase = data.next_phase_prediction || '';
     const nextInfo  = PHASES[nextPhase] || null;
     const confidence = data.phase_confidence || 0;
-    const reason    = esc(data.phase_reason || '');
-
-    // Asset row for current phase
-    const allocation = data.asset_allocation || {};
-    const currentRow = ASSET_TABLE.find(r => r.phase.toLowerCase() === phase.toLowerCase());
+    const strategy = allocation.strategy || (currentRow ? currentRow.strategy : 'N/A');
 
     return `
-      <section class="vn-section">
-        <div class="vn-section-title">📍 Section 1 — Trạng thái thị trường</div>
-
-        <!-- Phase state cards -->
-        <div class="vn-phase-row">
-          <div class="vn-phase-card current">
-            <div class="vn-phase-card-label">Phase hiện tại</div>
-            <div class="vn-phase-badge ${phaseInfo.badge}">
+      <div class="vn-hero">
+        <div class="vn-hero-grid">
+          <div class="vn-hero-card">
+            <div class="vn-hero-label">Phase hiện tại</div>
+            <div class="vn-phase-badge ${phaseInfo.badge} vn-hero-badge">
               ${phaseInfo.emoji} ${phaseInfo.label}
             </div>
-            ${confidence ? `<div class="vn-confidence">Độ tin cậy: <strong>${confidence}%</strong></div>` : ''}
-            ${reason ? `<div class="vn-reason">${reason}</div>` : ''}
           </div>
 
-          ${nextInfo ? `
-          <div class="vn-phase-card next">
-            <div class="vn-phase-card-label">Dự đoán phase tiếp theo</div>
-            <div class="vn-phase-badge ${nextInfo.badge}" style="opacity:.85;">
-              ${nextInfo.emoji} ${nextInfo.label}
-            </div>
-            ${data.next_phase_reason ? `<div class="vn-reason">${esc(data.next_phase_reason)}</div>` : ''}
-          </div>` : ''}
-        </div>
-
-        ${renderProviderAnalysis(data.provider_analysis)}
-
-        <!-- Allocation highlight for current phase -->
-        ${currentRow ? `
-        <div class="vn-alloc-highlight">
-          <div class="vn-alloc-title">📊 Phân bổ tài sản đề xuất — <em>${currentRow.phase}</em></div>
-          <div class="vn-alloc-chips">
-            <div class="vn-chip chip-equity">💼 Cổ phiếu<br><strong>${allocation.equity || currentRow.equity}</strong></div>
-            <div class="vn-chip chip-cash">💵 Cash / TK<br><strong>${allocation.cash || currentRow.cash}</strong></div>
-            <div class="vn-chip chip-gold">🥇 Vàng<br><strong>${allocation.gold || currentRow.gold}</strong></div>
-            <div class="vn-chip chip-crypto">₿ Crypto<br><strong>${allocation.crypto || currentRow.crypto}</strong></div>
+          <div class="vn-hero-card">
+            <div class="vn-hero-label">Phase tiếp theo</div>
+            ${nextInfo
+              ? `<div class="vn-phase-badge ${nextInfo.badge} vn-hero-badge" style="opacity:.85;">${nextInfo.emoji} ${nextInfo.label}</div>`
+              : `<div class="vn-hero-na">N/A</div>`}
           </div>
-          <div class="vn-strategy">🎯 Chiến lược: <strong>${allocation.strategy || currentRow.strategy}</strong></div>
-        </div>` : ''}
 
-        <!-- Full allocation table -->
-        <div class="vn-table-wrap">
-          <table class="vn-table">
-            <thead>
-              <tr>
-                <th>Phase</th>
-                <th>Cổ phiếu</th>
-                <th>Cash / TK</th>
-                <th>Vàng</th>
-                <th>Crypto</th>
-                <th>Chiến lược</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${ASSET_TABLE.map(row => {
-                const isActive = row.phase.toLowerCase() === phase.toLowerCase();
-                return `<tr class="${isActive ? 'vn-active-row' : ''}">
-                  <td><strong>${row.phase}</strong></td>
-                  <td>${row.equity}</td>
-                  <td>${row.cash}</td>
-                  <td>${row.gold}</td>
-                  <td>${row.crypto}</td>
-                  <td>${row.strategy}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
+          <div class="vn-hero-card">
+            <div class="vn-hero-label">Độ tin cậy (AI)</div>
+            <div class="vn-hero-confidence">${confidence ? confidence + '%' : 'N/A'}</div>
+          </div>
+
+          <div class="vn-hero-card vn-hero-action">
+            <div class="vn-hero-label">🎯 Chiến lược gợi ý</div>
+            <div class="vn-hero-strategy">${esc(strategy)}</div>
+          </div>
         </div>
-      </section>`;
+      </div>`;
   }
 
-  // ── Provider analysis cards (OpenAI vs Gemini) ───────────────
+  // ── AI Summary: 1 sentence + 2–3 bullet reasons (resolved) ──
+  function renderAiSummary(data) {
+    const { summary, bullets } = splitReason(data.phase_reason || '');
+    if (!summary) return '';
+
+    return `
+      <div class="vn-ai-summary">
+        <div class="vn-ai-summary-title">🤖 AI nhận định tổng hợp</div>
+        <div class="vn-ai-summary-text">${esc(summary)}</div>
+        ${bullets.length ? `
+        <ul class="vn-ai-bullets">
+          ${bullets.map(b => `<li>${esc(b)}</li>`).join('')}
+        </ul>` : ''}
+      </div>`;
+  }
+
+  // ── Provider analysis: OpenAI and Gemini as 2 short cards ───
   function renderProviderAnalysis(pa) {
     if (!pa || (!pa.openai && !pa.gemini)) return '';
 
@@ -282,103 +277,146 @@
         </div>`;
       const phaseInfo = PHASES[result.current_phase] || PHASES.sideway;
       const nextInfo  = PHASES[result.next_phase_prediction] || null;
+      const { summary, bullets } = splitReason(result.phase_reason || '');
       return `
-        <div class="vn-provider-card" style="border-color:${color}40;">
+        <div class="vn-provider-card" style="border-color:${color}30;">
           <div class="vn-provider-label" style="color:${color};">${icon} ${name}</div>
-          <div class="vn-provider-phase">
+          <div class="vn-provider-phase-row">
             <span class="vn-phase-badge ${phaseInfo.badge}" style="font-size:.78rem;padding:.2rem .6rem;">
               ${phaseInfo.emoji} ${phaseInfo.label}
             </span>
-            ${result.phase_confidence ? `<span class="vn-confidence" style="margin-left:.5rem;">${result.phase_confidence}%</span>` : ''}
+            ${nextInfo ? `<span class="vn-provider-arrow">→</span>
+            <span class="vn-phase-badge ${nextInfo.badge}" style="font-size:.72rem;padding:.15rem .45rem;opacity:.8;">${nextInfo.emoji} ${nextInfo.label}</span>` : ''}
+            ${result.phase_confidence ? `<span class="vn-provider-conf">${result.phase_confidence}%</span>` : ''}
           </div>
-          ${result.phase_reason ? `<div class="vn-reason" style="margin-top:.4rem;">${esc(result.phase_reason)}</div>` : ''}
-          ${nextInfo ? `
-          <div style="margin-top:.5rem;font-size:.8rem;color:var(--muted);">
-            Tiếp theo: <span class="vn-phase-badge ${nextInfo.badge}" style="font-size:.72rem;padding:.15rem .5rem;opacity:.85;">${nextInfo.emoji} ${nextInfo.label}</span>
-            ${result.next_phase_reason ? `<div class="vn-reason" style="margin-top:.25rem;">${esc(result.next_phase_reason)}</div>` : ''}
-          </div>` : ''}
+          ${summary ? `<div class="vn-provider-summary">${esc(summary)}</div>` : ''}
+          ${bullets.length ? `
+          <ul class="vn-provider-bullets">
+            ${bullets.map(b => `<li>${esc(b)}</li>`).join('')}
+          </ul>` : ''}
         </div>`;
     }
 
     return `
-      <div class="vn-provider-row">
-        <div class="vn-provider-title">🤖 Phân tích AI theo nhà cung cấp</div>
+      <section class="vn-section">
+        <div class="vn-section-title">🤖 Phân tích theo AI Provider</div>
         <div class="vn-provider-cards">
           ${providerCard('ChatGPT (OpenAI)', '#3b82f6', '🔵', pa.openai)}
           ${providerCard('Gemini (Google)', '#ef4444', '🔴', pa.gemini)}
         </div>
-      </div>`;
+      </section>`;
   }
 
-  // ── Section 2: Charts ────────────────────────────────────────
-  function renderSection2(data) {
+  // ── Allocation: highlight + collapsible full table ───────────
+  function renderAllocation(data, phase, allocation, currentRow) {
+    if (!currentRow) return '';
     return `
       <section class="vn-section">
-        <div class="vn-section-title">📈 Section 2 — Charts (3 tháng gần nhất)</div>
+        <div class="vn-section-title">📊 Phân bổ tài sản</div>
+
+        <div class="vn-alloc-highlight">
+          <div class="vn-alloc-title">Gợi ý hiện tại — <em>${currentRow.phase}</em></div>
+          <div class="vn-alloc-chips">
+            <div class="vn-chip chip-equity">💼 Cổ phiếu<br><strong>${allocation.equity || currentRow.equity}</strong></div>
+            <div class="vn-chip chip-cash">💵 Cash / TK<br><strong>${allocation.cash || currentRow.cash}</strong></div>
+            <div class="vn-chip chip-gold">🥇 Vàng<br><strong>${allocation.gold || currentRow.gold}</strong></div>
+            <div class="vn-chip chip-crypto">₿ Crypto<br><strong>${allocation.crypto || currentRow.crypto}</strong></div>
+          </div>
+          <div class="vn-strategy">🎯 Chiến lược: <strong>${esc(allocation.strategy || currentRow.strategy)}</strong></div>
+        </div>
+
+        <details class="vn-expand">
+          <summary class="vn-expand-summary">Xem bảng phân bổ đầy đủ</summary>
+          <div class="vn-table-wrap" style="margin-top:.75rem;">
+            <table class="vn-table">
+              <thead>
+                <tr>
+                  <th>Phase</th>
+                  <th>Cổ phiếu</th>
+                  <th>Cash / TK</th>
+                  <th>Vàng</th>
+                  <th>Crypto</th>
+                  <th>Chiến lược</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${ASSET_TABLE.map(row => {
+                  const isActive = row.phase.toLowerCase() === phase.toLowerCase();
+                  return `<tr class="${isActive ? 'vn-active-row' : ''}">
+                    <td><strong>${row.phase}</strong></td>
+                    <td>${row.equity}</td>
+                    <td>${row.cash}</td>
+                    <td>${row.gold}</td>
+                    <td>${row.crypto}</td>
+                    <td>${row.strategy}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>`;
+  }
+
+  // ── Charts section (below allocation) ───────────────────────
+  function renderChartsSection(data) {
+    function chartCard(id, title, hasData) {
+      return `
+        <div class="vn-chart-card">
+          <div class="vn-chart-title">${title}</div>
+          <div class="vn-chart-wrap">
+            ${hasData
+              ? `<canvas id="${id}"></canvas>`
+              : `<div class="vn-chart-na">N/A — Chưa có dữ liệu</div>`}
+          </div>
+        </div>`;
+    }
+    return `
+      <section class="vn-section">
+        <div class="vn-section-title">📈 Charts (3 tháng gần nhất)</div>
         <div class="vn-charts-grid">
-
-          <div class="vn-chart-card">
-            <div class="vn-chart-title">VN Index + MA10 + MA50 + Volume</div>
-            <div class="vn-chart-wrap">
-              <canvas id="chart-vn-index"></canvas>
-            </div>
-          </div>
-
-          <div class="vn-chart-card">
-            <div class="vn-chart-title">Breadth — % Mã tăng / % Mã giảm</div>
-            <div class="vn-chart-wrap">
-              <canvas id="chart-breadth"></canvas>
-            </div>
-          </div>
-
-          <div class="vn-chart-card">
-            <div class="vn-chart-title">Panic Score</div>
-            <div class="vn-chart-wrap">
-              <canvas id="chart-panic"></canvas>
-            </div>
-          </div>
-
-          <div class="vn-chart-card">
-            <div class="vn-chart-title">Lãi suất huy động & Liên ngân hàng (6 tháng)</div>
-            <div class="vn-chart-wrap">
-              <canvas id="chart-rates"></canvas>
-            </div>
-          </div>
-
+          ${chartCard('chart-vn-index', 'VN Index + MA10 + MA50 + Volume', (data.vn_index || []).length > 0)}
+          ${chartCard('chart-breadth',  'Breadth — % Mã tăng / % Mã giảm', (data.breadth || []).length > 0)}
+          ${chartCard('chart-panic',    'Panic Score',                      (data.panic_scores || []).length > 0)}
+          ${chartCard('chart-rates',    'Lãi suất huy động & Liên ngân hàng (6 tháng)', (data.interest_rates || []).length > 0)}
         </div>
       </section>`;
   }
 
-  // ── Section 3: Phase criteria table ─────────────────────────
-  function renderSection3() {
+  // ── Criteria table (collapsed by default) ───────────────────
+  function renderCriteriaSection() {
     return `
-      <section class="vn-section">
-        <div class="vn-section-title">📋 Section 3 — Tiêu chí xác định Phase</div>
-        <div class="vn-table-wrap">
-          <table class="vn-table vn-criteria-table">
-            <thead>
-              <tr>
-                <th>Trạng thái</th>
-                <th>Giá (trend)</th>
-                <th>Thanh khoản</th>
-                <th>Breadth</th>
-                <th>Hành vi CP</th>
-                <th>Dấu hiệu sắp chuyển</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${CRITERIA_TABLE.map(row => `
+      <section class="vn-section vn-section-collapse">
+        <details class="vn-expand">
+          <summary class="vn-section-title vn-section-title-summary">
+            📋 Tiêu chí xác định Phase <span class="vn-expand-hint">(nhấn để xem)</span>
+          </summary>
+          <div class="vn-table-wrap" style="margin-top:.75rem;">
+            <table class="vn-table vn-criteria-table">
+              <thead>
                 <tr>
-                  <td><strong>${row.phase}</strong></td>
-                  <td>${row.price}</td>
-                  <td>${row.liquidity}</td>
-                  <td>${row.breadth}</td>
-                  <td>${row.behavior}</td>
-                  <td>${row.next_signal}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
+                  <th>Trạng thái</th>
+                  <th>Giá (trend)</th>
+                  <th>Thanh khoản</th>
+                  <th>Breadth</th>
+                  <th>Hành vi CP</th>
+                  <th>Dấu hiệu sắp chuyển</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${CRITERIA_TABLE.map(row => `
+                  <tr>
+                    <td><strong>${row.phase}</strong></td>
+                    <td>${row.price}</td>
+                    <td>${row.liquidity}</td>
+                    <td>${row.breadth}</td>
+                    <td>${row.behavior}</td>
+                    <td>${row.next_signal}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </section>`;
   }
 
