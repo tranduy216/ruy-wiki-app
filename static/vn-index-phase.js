@@ -6,9 +6,10 @@
 (function () {
   'use strict';
 
-  const VN_DATA_LABEL    = 'vn-index-phase-data';
-  const VN_WORKFLOW_FILE = 'update-vn-index.yml';
-  const MONTHS_TO_FETCH  = 6;   // fetch last 6 monthly issues; last 3 used for 3-month charts
+  const VN_DATA_LABEL      = 'vn-index-phase-data';
+  const VN_WORKFLOW_FILE   = 'update-vn-index.yml';
+  const MONTHS_TO_FETCH    = 6;   // fetch last 6 monthly issues; last 3 used for 3-month charts
+  const SUMMARY_MAX_LENGTH = 240; // max chars shown in hero summary line before truncation
 
   // ── Phase definitions ────────────────────────────────────────
   const PHASES = {
@@ -226,7 +227,7 @@
             </div>
           </div>
         </div>
-        ${summaryText ? `<div class="vn-summary-line">💬 ${esc(summaryText.slice(0, 240))}${summaryText.length > 240 ? '…' : ''}</div>` : ''}
+        ${summaryText ? `<div class="vn-summary-line">💬 ${esc(summaryText.slice(0, SUMMARY_MAX_LENGTH))}${summaryText.length > SUMMARY_MAX_LENGTH ? '…' : ''}</div>` : ''}
       </section>`;
   }
 
