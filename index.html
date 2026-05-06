@@ -600,7 +600,142 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       flex-shrink: 0;
     }
     .nav-theme-btn:hover { background: rgba(255,255,255,.12); color: #fff; }
+
+    /* ===== VN INDEX PHASE PAGE ===== */
+    .vn-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+      padding: 1.4rem 1.5rem;
+    }
+    .vn-section-title {
+      font-size: 1.05rem; font-weight: 800; color: var(--text);
+      margin-bottom: 1.2rem; padding-bottom: .65rem;
+      border-bottom: 2px solid var(--border);
+      display: flex; align-items: center; gap: .4rem;
+    }
+    /* Phase cards */
+    .vn-phase-row {
+      display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.4rem;
+    }
+    .vn-phase-card {
+      flex: 1; min-width: 200px;
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: 1rem 1.2rem;
+    }
+    .vn-phase-card.next { opacity: .9; }
+    .vn-phase-card-label {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted); margin-bottom: .5rem;
+    }
+    .vn-phase-badge {
+      display: inline-flex; align-items: center; gap: .35rem;
+      font-size: 1.25rem; font-weight: 800; padding: .3rem .75rem;
+      border-left: 4px solid currentColor;
+    }
+    .badge-sideway      { color: #6b7280; border-color: #6b7280; background: rgba(107,114,128,.1); }
+    .badge-uptrend      { color: #22c55e; border-color: #22c55e; background: rgba(34,197,94,.1); }
+    .badge-distribution { color: #f59e0b; border-color: #f59e0b; background: rgba(245,158,11,.1); }
+    .badge-downtrend    { color: #ef4444; border-color: #ef4444; background: rgba(239,68,68,.1); }
+    .badge-panic        { color: #dc2626; border-color: #dc2626; background: rgba(220,38,38,.12); }
+    .badge-recovery     { color: #10b981; border-color: #10b981; background: rgba(16,185,129,.1); }
+    .vn-confidence {
+      margin-top: .5rem; font-size: .82rem; color: var(--muted);
+    }
+    .vn-reason {
+      margin-top: .5rem; font-size: .82rem; color: var(--muted);
+      line-height: 1.6; font-style: italic;
+    }
+    /* Allocation highlight */
+    .vn-alloc-highlight {
+      background: rgba(0,120,212,.05); border: 1px solid rgba(0,120,212,.2);
+      padding: 1rem 1.2rem; margin-bottom: 1.4rem;
+    }
+    .vn-alloc-title {
+      font-size: .87rem; font-weight: 700; color: var(--text); margin-bottom: .75rem;
+    }
+    .vn-alloc-chips {
+      display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem;
+    }
+    .vn-chip {
+      flex: 1; min-width: 100px; max-width: 160px;
+      padding: .6rem .9rem; text-align: center;
+      font-size: .8rem; line-height: 1.5;
+      border: 1px solid var(--border);
+    }
+    .vn-chip strong { display: block; font-size: 1rem; margin-top: .15rem; }
+    .chip-equity  { background: rgba(34,197,94,.07);  border-color: rgba(34,197,94,.25);  color: var(--text); }
+    .chip-cash    { background: rgba(0,120,212,.07);  border-color: rgba(0,120,212,.25);  color: var(--text); }
+    .chip-gold    { background: rgba(245,158,11,.07); border-color: rgba(245,158,11,.25); color: var(--text); }
+    .chip-crypto  { background: rgba(139,92,246,.07); border-color: rgba(139,92,246,.25); color: var(--text); }
+    .vn-strategy {
+      font-size: .88rem; color: var(--text); font-weight: 600;
+    }
+    /* Table */
+    .vn-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .vn-table {
+      width: 100%; border-collapse: collapse; font-size: .85rem; min-width: 600px;
+    }
+    .vn-table th {
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: .5rem .85rem; font-weight: 700; color: var(--text); text-align: left;
+      white-space: nowrap;
+    }
+    .vn-table td {
+      border: 1px solid var(--border); padding: .5rem .85rem;
+      color: var(--text); vertical-align: top; line-height: 1.5;
+    }
+    .vn-table tbody tr:hover td { background: rgba(0,120,212,.04); }
+    .vn-active-row td { background: rgba(0,120,212,.07) !important; font-weight: 600; }
+    .vn-active-row td:first-child { border-left: 3px solid var(--blue); }
+    /* Charts */
+    .vn-charts-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;
+    }
+    @media (max-width: 700px) {
+      .vn-charts-grid { grid-template-columns: 1fr; }
+      .vn-alloc-chips { gap: .5rem; }
+      .vn-chip { min-width: 80px; }
+    }
+    .vn-chart-card {
+      background: var(--surface2); border: 1px solid var(--border); padding: 1rem;
+    }
+    .vn-chart-title {
+      font-size: .82rem; font-weight: 700; color: var(--muted);
+      margin-bottom: .65rem; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .vn-chart-wrap { height: 220px; position: relative; }
+    /* Criteria table */
+    .vn-criteria-table { min-width: 750px; }
+    .vn-criteria-table td { font-size: .82rem; }
+    /* Provider analysis (OpenAI vs Gemini) */
+    .vn-provider-row {
+      margin-bottom: 1.4rem;
+    }
+    .vn-provider-title {
+      font-size: .82rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .04em; margin-bottom: .65rem;
+    }
+    .vn-provider-cards {
+      display: flex; gap: 1rem; flex-wrap: wrap;
+    }
+    .vn-provider-card {
+      flex: 1; min-width: 220px;
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: .85rem 1rem;
+    }
+    .vn-provider-label {
+      font-size: .75rem; font-weight: 800; text-transform: uppercase;
+      letter-spacing: .05em; margin-bottom: .5rem;
+    }
+    .vn-provider-phase { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; }
+    .vn-provider-na { font-size: .82rem; color: var(--muted); font-style: italic; }
+    @media (max-width: 700px) {
+      .vn-provider-cards { flex-direction: column; }
+    }
   </style>
+  <!-- Chart.js (loaded before page scripts) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -617,6 +752,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
       <li><a id="nav-co-hoi" onclick="navigate('co-hoi')" class="active"><span>📈</span> Cơ hội</a></li>
       <li><a id="nav-chia-se" onclick="navigate('chia-se')"><span>💬</span> Chia sẻ</a></li>
       <li><a id="nav-pivot-score" onclick="navigate('pivot-score')"><span>🔄</span> Điểm đảo chiều</a></li>
+      <li><a id="nav-vn-index-phase" onclick="navigate('vn-index-phase')"><span>📊</span> VN Index Phase</a></li>
       <li><div class="nav-sep"></div></li>
       <li>
         <a onclick="openPATModal(false)" title="Cài đặt GitHub PAT để viết bài">
@@ -884,7 +1020,7 @@ function syncURL(hash) {
 async function parseAndRoute() {
   const raw  = location.hash.slice(1);             // strip leading '#'
   const [seg, ...rest] = (raw || '').split('/');
-  const menu = (seg === 'pivot-score' || LABELS[seg]) ? seg : 'co-hoi';
+  const menu = (seg === 'pivot-score' || seg === 'vn-index-phase' || LABELS[seg]) ? seg : 'co-hoi';
   const slug = rest.join('/');                     // support future sub-paths
 
   if (slug) {
@@ -925,13 +1061,15 @@ function navigate(menu) {
   updateNavActive();
   if (menu === 'pivot-score') {
     loadPivotScore();
+  } else if (menu === 'vn-index-phase') {
+    loadVnIndexPhase();
   } else {
     loadAndRenderList();
   }
 }
 
 function updateNavActive() {
-  ['co-hoi', 'chia-se', 'pivot-score'].forEach(menu => {
+  ['co-hoi', 'chia-se', 'pivot-score', 'vn-index-phase'].forEach(menu => {
     const el = document.getElementById('nav-' + menu);
     if (el) el.classList.toggle('active', currentMenu === menu);
   });
@@ -1526,6 +1664,7 @@ updatePATDot();
 setupEditorUpload();
 </script>
 <script src="static/pivot-score.js"></script>
+<script src="static/vn-index-phase.js"></script>
 <script>parseAndRoute();</script>
 </body>
 </html>
