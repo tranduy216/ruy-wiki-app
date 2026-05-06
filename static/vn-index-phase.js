@@ -179,10 +179,10 @@
 
   // ── Main render ──────────────────────────────────────────────
   function renderVnIndexPhase(data) {
-    const phase = data.current_phase || 'sideway';
-    const phaseInfo = PHASES[phase] || PHASES.sideway;
+    const phase = data.current_phase || null;
+    const phaseInfo = phase ? (PHASES[phase] || PHASES.sideway) : null;
     const allocation = data.asset_allocation || {};
-    const currentRow = ASSET_TABLE.find(r => r.phase.toLowerCase() === phase.toLowerCase());
+    const currentRow = phase ? ASSET_TABLE.find(r => r.phase.toLowerCase() === phase.toLowerCase()) : null;
     const updatedAt = data.updated_at
       ? new Date(data.updated_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
       : 'N/A';
@@ -223,16 +223,16 @@
     const nextPhase = data.next_phase_prediction || '';
     const nextInfo  = PHASES[nextPhase] || null;
     const confidence = data.phase_confidence || 0;
-    const strategy = allocation.strategy || (currentRow ? currentRow.strategy : 'N/A');
+    const strategy = (allocation && allocation.strategy) || (currentRow ? currentRow.strategy : 'N/A');
 
     return `
       <div class="vn-hero">
         <div class="vn-hero-grid">
           <div class="vn-hero-card">
             <div class="vn-hero-label">Phase hiện tại</div>
-            <div class="vn-phase-badge ${phaseInfo.badge} vn-hero-badge">
-              ${phaseInfo.emoji} ${phaseInfo.label}
-            </div>
+            ${phaseInfo
+              ? `<div class="vn-phase-badge ${phaseInfo.badge} vn-hero-badge">${phaseInfo.emoji} ${phaseInfo.label}</div>`
+              : `<div class="vn-hero-na">N/A</div>`}
           </div>
 
           <div class="vn-hero-card">
