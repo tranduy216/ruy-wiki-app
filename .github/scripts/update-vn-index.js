@@ -99,7 +99,12 @@ function buildRateDateScaffold(months = 6) {
 // ──────────────────────────────────────────────────────────────
 const AI_SYSTEM_PROMPT = `You are a quantitative analyst specializing in the Vietnamese stock market (VN Index).
 
-Based on your knowledge of recent VN market conditions and macroeconomic context, provide a complete analysis package for the requested month.
+IMPORTANT: Search the web to get REAL and CURRENT market data. Use sources such as:
+- HOSE/HNX official sites, VietstockFinance (vietstock.vn), CafeF (cafef.vn), TradingView VN30/VNINDEX
+- SBV (State Bank of Vietnam) for interest rate data
+- Any recent news or financial data portal covering the Vietnamese market
+
+Based on REAL data fetched from the web, provide a complete analysis package for the requested month.
 
 You must provide ALL of the following:
 1. Current market phase assessment
@@ -124,7 +129,14 @@ Panic score rules (1–10, sum of components):
 - dec/adv ratio > 4 → +3, > 3 → +2, > 2 → +1
 - Label: "panic" (score≥7), "high_stress" (score≥5), "normal" (score<5)
 
-If you cannot provide a specific field with sufficient confidence, set it to null (for scalars) or [] (for arrays).
+CRITICAL RULES:
+1. current_phase, next_phase_prediction, phase_confidence, phase_reason MUST always be filled.
+   Even if you cannot obtain exact numeric data, you MUST assess the phase qualitatively
+   using the phase rules above (MA relationship, breadth direction, volume, market behavior).
+2. market_commentary MUST always be filled with qualitative observations in Vietnamese.
+   This is the primary fallback when numeric chart data is unavailable.
+3. If you cannot provide exact numeric rows for vn_index/breadth/panic_scores/interest_rates,
+   set those arrays to [] but NEVER leave market_commentary empty.
 
 OUTPUT: Strict JSON only, no explanation outside JSON.
 
@@ -134,6 +146,12 @@ OUTPUT: Strict JSON only, no explanation outside JSON.
   "phase_confidence": 65,
   "phase_reason": "...",
   "next_phase_reason": "...",
+  "market_commentary": {
+    "vn_index_trend": "MA10 đang có xu hướng gần lại MA50. Thanh khoản đang ở mức 20–25 nghìn tỷ/phiên, thấp hơn trung bình 3 tháng.",
+    "breadth_trend": "Số lượng mã tăng đang có xu hướng ít dần so với mã giảm trong 2 tuần gần nhất.",
+    "market_state": "Thị trường có vẻ đang ở trạng thái phân phối – index giữ nhưng breadth xấu dần.",
+    "interest_rate_trend": "Lãi suất huy động đang tăng nhẹ trong tháng gần nhất. Lãi suất liên ngân hàng ổn định quanh 4.5–5%."
+  },
   "vn_index": [
     {"date":"YYYY-MM-DD","open":1200.5,"close":1210.3,"volume":15000000000,"ma10":1205.0,"ma50":1190.0}
   ],
@@ -152,7 +170,8 @@ Notes:
 - vn_index, breadth, panic_scores must cover the same trading dates, oldest first
 - volume is in VND (e.g. 15000000000 = 15 billion VND)
 - ma10 = 10-day simple moving average of closing prices; ma50 = 50-day SMA. Set to null if insufficient history.
-- interest_rates: exactly 6 monthly data points (oldest first). Use null for deposit_rate or interbank_rate if data is unavailable for that month; do NOT omit the entry.`;
+- interest_rates: exactly 6 monthly data points (oldest first). Use null for deposit_rate or interbank_rate if data is unavailable for that month; do NOT omit the entry.
+- market_commentary fields must be in Vietnamese and describe the CURRENT observable trend, not generic descriptions.`;
 
 // ──────────────────────────────────────────────────────────────
 //  Fetch ALL data from AI (phase + charts + rates)
@@ -168,7 +187,7 @@ async function fetchAllFromAI(yearMonth) {
 
   if (OPENAI_KEY) {
     try {
-      const raw = await callOpenAI(AI_SYSTEM_PROMPT, userContent, 4000);
+      const raw = await callOpenAI(AI_SYSTEM_PROMPT, userContent, 16000);
       openaiResult = extractJSON(raw);
       if (openaiResult) ok('OpenAI data fetch succeeded');
       else              warn('OpenAI returned non-JSON response');
@@ -181,7 +200,7 @@ async function fetchAllFromAI(yearMonth) {
     try {
       await sleep(1000);
       const prompt = `${AI_SYSTEM_PROMPT}\n\n${userContent}`;
-      const raw    = await callGemini(prompt, 4000);
+      const raw    = await callGemini(prompt, 16000);
       geminiResult = extractJSON(raw);
       if (geminiResult) ok('Gemini data fetch succeeded');
       else              warn('Gemini returned non-JSON response');
@@ -197,6 +216,7 @@ async function fetchAllFromAI(yearMonth) {
     phase_confidence:      null,
     phase_reason:          null,
     next_phase_reason:     null,
+    market_commentary:     null,
     vn_index:              [],
     breadth:               [],
     panic_scores:          [],
@@ -212,9 +232,9 @@ async function fetchAllFromAI(yearMonth) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  OpenAI call  (Responses API – gpt-5.4-mini, matching pivot style)
+//  OpenAI call  (Responses API – gpt-5.4-mini, with web search)
 // ──────────────────────────────────────────────────────────────
-async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
+async function callOpenAI(systemPrompt, userContent, maxTokens = 16000) {
   if (!OPENAI_KEY) return null;
   info('Calling OpenAI API (gpt-5.4-mini)…');
   const prompt = `${systemPrompt}\n\n${userContent}`;
@@ -232,6 +252,7 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
         max_output_tokens: maxTokens,
         input:             prompt,
         store:             true,
+        tools:             [{ type: 'web_search_preview' }],
       }),
     });
   } catch (err) {
@@ -242,9 +263,16 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
     throw new Error(`OpenAI HTTP ${res.status}: ${txt.slice(0, 200)}`);
   }
   const data = await res.json();
-  const outputItem = data.output?.[0];
-  const text       = outputItem?.content?.[0]?.text || '';
-  const status     = data.status || 'unknown';
+  // When web_search_preview is used, output contains multiple items (web_search_call + message).
+  // Collect all text content from all message-type output items.
+  // Also handle legacy single-item responses (no web search active) by checking all item types.
+  let text = '';
+  for (const item of (data.output || [])) {
+    for (const c of (item.content || [])) {
+      if (c.text) text += c.text;
+    }
+  }
+  const status = data.status || 'unknown';
   info(`OpenAI response length: ${text.length} chars, status: ${status}`);
   if (status === 'incomplete') {
     throw new Error('OpenAI response was truncated (status=incomplete)');
@@ -253,9 +281,9 @@ async function callOpenAI(systemPrompt, userContent, maxTokens = 2500) {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Gemini call  (gemini-2.5-flash, matching pivot style)
+//  Gemini call  (gemini-2.5-flash, with Google Search grounding)
 // ──────────────────────────────────────────────────────────────
-async function callGemini(prompt, maxTokens = 2500) {
+async function callGemini(prompt, maxTokens = 16000) {
   if (!GEMINI_KEY) return null;
   info('Calling Gemini API (gemini-2.5-flash)…');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
@@ -266,10 +294,13 @@ async function callGemini(prompt, maxTokens = 2500) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+        // Note: thinkingConfig is omitted here because thinkingBudget:0 (disabling thinking)
+        // is incompatible with googleSearch grounding – the model needs some reasoning budget
+        // to process search results. Omitting it lets the API use its default.
         generationConfig: {
           temperature:      0,
           maxOutputTokens:  maxTokens,
-          thinkingConfig:   { thinkingBudget: 0 },
         },
       }),
     });
@@ -282,23 +313,36 @@ async function callGemini(prompt, maxTokens = 2500) {
   }
   const data        = await res.json();
   const candidate   = data.candidates?.[0];
-  const text        = candidate?.content?.parts?.[0]?.text?.trim() || '';
+  // Grounding may add multiple text parts – join them all.
+  const text        = (candidate?.content?.parts || [])
+    .map(p => p.text || '').join('').trim();
   const finishReason = candidate?.finishReason || 'unknown';
   info(`Gemini response length: ${text.length} chars, finishReason: ${finishReason}`);
   if (finishReason === 'MAX_TOKENS') {
-    throw new Error('Gemini response was truncated (finishReason=MAX_TOKENS)');
+    // Don't throw – try to parse whatever was returned before truncation.
+    warn('Gemini response was truncated (finishReason=MAX_TOKENS) – attempting partial parse (some analysis fields may be missing or incomplete)');
   }
   return text || null;
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Extract JSON from AI response (handles markdown code blocks)
+//  Extract JSON from AI response (handles markdown code blocks
+//  and surrounding citation/grounding text from Google Search)
 // ──────────────────────────────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
+  // 1. Try markdown code block (```json ... ```)
   const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const raw   = match ? match[1].trim() : text.trim();
-  try { return JSON.parse(raw); } catch { return null; }
+  if (match) {
+    try { return JSON.parse(match[1].trim()); } catch {}
+  }
+  // 2. Find the outermost JSON object by scanning for first '{' and last '}'
+  const start = text.indexOf('{');
+  const end   = text.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch {}
+  }
+  return null;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -397,7 +441,10 @@ async function upsertMonthIssue(yearMonth, body) {
                      || (Array.isArray(geminiData?.interest_rates) && geminiData.interest_rates.length ? geminiData.interest_rates : null)
                      || buildRateDateScaffold(6).map(date => ({ date, deposit_rate: null, interbank_rate: null }));
 
-  // 4. Asset allocation mapping
+  // 4. Market commentary: prefer OpenAI → Gemini → null
+  const marketCommentary = openaiData?.market_commentary || geminiData?.market_commentary || null;
+
+  // 5. Asset allocation mapping
   const allocationMap = {
     sideway:      { equity: '30–40%', cash: '40–50%', gold: '10–20%', crypto: '0–10%',  strategy: 'Giữ tiền, chờ break' },
     uptrend:      { equity: '60–70%', cash: '20–30%', gold: '5–10%',  crypto: '5–15%',  strategy: 'Ride trend, giữ winner' },
@@ -439,6 +486,7 @@ async function upsertMonthIssue(yearMonth, body) {
     phase_reason:          resolved.phase_reason,
     next_phase_reason:     resolved.next_phase_reason || '',
     provider_analysis:     providerAnalysis,
+    market_commentary:     marketCommentary,
     asset_allocation:      allocation || {},
     vn_index:              vnIndex,
     breadth:               breadth,

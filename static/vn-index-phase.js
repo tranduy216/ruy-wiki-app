@@ -160,6 +160,7 @@
       next_phase_reason:     latest.next_phase_reason,
       asset_allocation:      latest.asset_allocation,
       provider_analysis:     latest.provider_analysis || null,
+      market_commentary:     latest.market_commentary || null,
       // Merge + deduplicate by date, ascending
       vn_index:     mergeByDate(last3.flatMap(m => m.vn_index     || [])),
       breadth:      mergeByDate(last3.flatMap(m => m.breadth       || [])),
@@ -366,14 +367,18 @@
 
   // ── Charts section (below allocation) ───────────────────────
   function renderChartsSection(data) {
-    function chartCard(id, title, hasData) {
+    const mc = data.market_commentary || {};
+
+    function chartCard(id, title, hasData, commentary) {
       return `
         <div class="vn-chart-card">
           <div class="vn-chart-title">${title}</div>
           <div class="vn-chart-wrap">
             ${hasData
               ? `<canvas id="${id}"></canvas>`
-              : `<div class="vn-chart-na">N/A — Chưa có dữ liệu</div>`}
+              : commentary
+                ? `<div class="vn-chart-commentary">${esc(commentary)}</div>`
+                : `<div class="vn-chart-na">N/A — Chưa có dữ liệu</div>`}
           </div>
         </div>`;
     }
@@ -381,10 +386,14 @@
       <section class="vn-section">
         <div class="vn-section-title">📈 Charts (3 tháng gần nhất)</div>
         <div class="vn-charts-grid">
-          ${chartCard('chart-vn-index', 'VN Index + MA10 + MA50 + Volume', (data.vn_index || []).length > 0)}
-          ${chartCard('chart-breadth',  'Breadth — % Mã tăng / % Mã giảm', (data.breadth || []).length > 0)}
-          ${chartCard('chart-panic',    'Panic Score',                      (data.panic_scores || []).length > 0)}
-          ${chartCard('chart-rates',    'Lãi suất huy động & Liên ngân hàng (6 tháng)', (data.interest_rates || []).length > 0)}
+          ${chartCard('chart-vn-index', 'VN Index + MA10 + MA50 + Volume', (data.vn_index || []).length > 0,
+            mc.vn_index_trend)}
+          ${chartCard('chart-breadth',  'Breadth — % Mã tăng / % Mã giảm', (data.breadth || []).length > 0,
+            mc.breadth_trend)}
+          ${chartCard('chart-panic',    'Panic Score', (data.panic_scores || []).length > 0,
+            mc.market_state)}
+          ${chartCard('chart-rates',    'Lãi suất huy động & Liên ngân hàng (6 tháng)', (data.interest_rates || []).length > 0,
+            mc.interest_rate_trend)}
         </div>
       </section>`;
   }
